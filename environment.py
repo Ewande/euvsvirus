@@ -20,6 +20,11 @@ TARGET_SKILL_LEVEL = 90
 REVIEW_RATIO = 0.25
 
 REWARD_FOR_ACHIEVING_TARGET_LEVEL = 100
+REWARD_FOR_ACHIEVING_ALL_LEVELS = 500
+
+PENALTY_FOR_UNNECESSARY_TEST = -0.5 * REWARD_FOR_ACHIEVING_TARGET_LEVEL
+TIME_PENALTY_FOR_TEST = - 5
+GAIN_MULTIPLIER_FOR_TEST = 20
 
 
 class StudentEnv(gym.Env):
@@ -27,6 +32,7 @@ class StudentEnv(gym.Env):
         super(StudentEnv).__init__()
         self.action_space = spaces.MultiDiscrete([2, subjects_number, difficulties_levels, learning_units_number])
         self.observation_space = spaces.Box(low=0, high=100, shape=(subjects_number, difficulties_levels))
+        self.difficulties_level_nb = difficulties_levels
         self.skills_levels = np.maximum(
             np.random.normal(MEAN_START_SKILL_LEVEL, STD_START_SKILL_LEVEL, size=subjects_number),
             np.zeros(subjects_number)
@@ -46,7 +52,11 @@ class StudentEnv(gym.Env):
 
         if action[0]:
             reward = self._test(action[1], action[2])
-            is_done = all(self.skills_levels > TARGET_SKILL_LEVEL)
+            if all(self.skills_level_achieved > 0):
+                is_done = 1
+                reward += REWARD_FOR_ACHIEVING_ALL_LEVELS
+            else:
+                is_done = 0
         else:
             reward = self._train(action[1], action[2])
             is_done = 0
@@ -60,14 +70,16 @@ class StudentEnv(gym.Env):
         self.last_scores[subject, difficulty] = min(max(sampled_test_score, 0), 100)
         self.last_action += f'test score={self.last_scores[subject, difficulty]:.1f}'
         if not self.cumulative_train_time:
-            return -5
+            return TIME_PENALTY_FOR_TEST
         if self.skills_levels[subject] > TARGET_SKILL_LEVEL:
-            if self.skills_level_achieved[subject]:
-                return -50
-            else:
+            # if not self.skills_level_achieved[subject] and difficulty+1 == self.difficulties_level_nb:
+            if not self.skills_level_achieved[subject]:
                 self.skills_level_achieved[subject] = 1
-                return REWARD_FOR_ACHIEVING_TARGET_LEVEL
-        return 10*((self.last_scores[subject, difficulty] - previous_score) / self.cumulative_train_time) - 4
+                return REWARD_FOR_ACHIEVING_TARGET_LEVEL * (difficulty+1)/self.difficulties_level_nb
+            else:
+                return PENALTY_FOR_UNNECESSARY_TEST
+        return GAIN_MULTIPLIER_FOR_TEST*((self.last_scores[subject, difficulty] - previous_score)
+                                         / self.cumulative_train_time) + TIME_PENALTY_FOR_TEST
 
     def _get_test_mean(self, subject, difficulty):
         proper_difficulty = sum(self.difficulties_thresholds <= self.skills_levels[subject]) - 1
@@ -108,6 +120,7 @@ class StudentEnv(gym.Env):
         self.difficulties_thresholds = np.linspace(0, 100, num=len(self.difficulties_thresholds), endpoint=False)
         self.cumulative_train_time = 0
         self.episode += 1
+        self.skills_level_achieved = np.zeros(self.skills_level_achieved.shape)
         return self.last_scores
 
     def render(self, mode='human'):
