@@ -6,6 +6,7 @@ from gym import spaces
 import numpy as np
 
 import reporting
+from utils import estimate_skills
 
 MEAN_START_SKILL_LEVEL = 20
 STD_START_SKILL_LEVEL = 10
@@ -98,7 +99,7 @@ class StudentEnv(gym.Env):
                                          / self.cumulative_train_time[subject]) + TIME_PENALTY_FOR_TEST
 
     def _get_test_mean(self, subject, difficulty):
-        proper_difficulty = self._get_proper_difficulty(subject)
+        proper_difficulty = self._get_proper_difficulty(self.skills_levels[subject])
         if proper_difficulty < difficulty:
             return self._get_too_hard_test_mean(subject, difficulty, proper_difficulty)
         if proper_difficulty > difficulty:
@@ -120,21 +121,26 @@ class StudentEnv(gym.Env):
     def _train(self, subject, learning_unit, learning_difficulty):
         mean_gain = self.mean_skill_gains[subject, learning_unit]
         sampled_gain = np.random.normal(mean_gain, STUDENT_SKILL_GAIN_STD)
-        adjusted_gain = sampled_gain * self._get_not_adapted_learning_penalty(subject, learning_difficulty)
+        adjusted_gain = sampled_gain * self._get_not_adapted_learning_penalty(
+            self.skills_levels[subject], learning_difficulty)
         adjusted_gain = max(adjusted_gain, 0)
         self.skills_levels[subject] += adjusted_gain
         self.skills_levels[subject] = min(self.skills_levels[subject], 100)
         self.last_action['improvement'] = max(adjusted_gain, 0)
         self.last_action['learning_unit'] = learning_unit + 1
         self.cumulative_train_time[subject] += (learning_unit + 1)
-        return 0 - (learning_unit + 1) + adjusted_gain * GAIN_REWARD_RATIO
+        estimated_skill = estimate_skills(self.last_scores, REVIEW_RATIO)[subject]
+        estimated_penalty = self._get_not_adapted_learning_penalty(estimated_skill, learning_difficulty)
+        estimated_gain = POPULATION_MEAN_SKILL_GAIN * learning_unit
+        adapted_learning_reward = estimated_penalty * estimated_gain * GAIN_REWARD_RATIO
+        return 0 - (learning_unit + 1) + adapted_learning_reward
 
-    def _get_not_adapted_learning_penalty(self, subject, learning_difficulty):
-        proper_difficulty = self._get_proper_difficulty(subject)
+    def _get_not_adapted_learning_penalty(self, skill, learning_difficulty):
+        proper_difficulty = self._get_proper_difficulty(skill)
         return NOT_ADAPTED_DIFFICULTY_PENALTY ** abs(learning_difficulty - proper_difficulty)
 
-    def _get_proper_difficulty(self, subject):
-        return sum(self.difficulties_thresholds <= self.skills_levels[subject]) - 1
+    def _get_proper_difficulty(self, skill):
+        return sum(self.difficulties_thresholds <= skill) - 1
 
     def reset(self):
         self.skills_levels = np.maximum(

@@ -8,12 +8,12 @@ from reporting import setup_logging
 
 
 env = StudentEnv(subjects_number=2)
-if Path('ppo2.zip').exists():
-    model = PPO2.load('ppo2')
+if Path('ppo2_new.zip').exists():
+    model = PPO2.load('ppo2_new')
 else:
-    model = PPO2(MlpPolicy, env, verbose=1)
-    model.learn(total_timesteps=25000)
-    model.save('ppo2')
+    model = PPO2(MlpPolicy, env, verbose=1, gamma=0.9)
+    model.learn(total_timesteps=250000)
+    model.save('ppo2_new')
 
 setup_logging('application.log')
 
