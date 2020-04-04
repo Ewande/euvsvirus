@@ -1,6 +1,6 @@
 import gym
-import numpy as np
 from gym import spaces
+import numpy as np
 
 
 MEAN_START_SKILL_LEVEL = 20
@@ -13,9 +13,11 @@ POPULATION_MIN_SKILL_GAIN = 0.2
 
 STUDENT_SKILL_GAIN_STD_MEAN_RATIO = 0.5
 
-TEST_SCORE_STD_MEAN_RATIO = 0.05
+TEST_SCORE_STD = 5
 
 TARGET_SKILL_LEVEL = 90
+
+REVIEW_RATIO = 0.25
 
 
 class StudentEnv(gym.Env):
@@ -30,11 +32,15 @@ class StudentEnv(gym.Env):
         self.last_scores = np.zeros(shape=(subjects_number, difficulties_levels))
         self.mean_skill_gains = _get_mean_skills_gains(subjects_number, learning_units_number)
         self.difficulties_thresholds = np.linspace(0, 100, num=difficulties_levels, endpoint=False)
+        self.review_ratio = 1 / (difficulties_levels + 1)
         self.cumulative_train_time = 0
         self.episode = 0
+        self.last_action = None
 
     def step(self, action):
         assert self.action_space.contains(action)
+        self.last_action = ('test' if action[0] else 'train') + f';subject={action[1] + 1};diff={action[2] + 1};'
+
         if action[0]:
             reward = self._test(action[1], action[2])
         else:
@@ -43,39 +49,43 @@ class StudentEnv(gym.Env):
         return self.last_scores, reward, is_done, {}
 
     def _test(self, subject, difficulty):
-        skill_level = self.skills_levels[subject]
-        proper_difficulty = sum(self.difficulties_thresholds <= skill_level) - 1
-        test_mean = self._get_test_mean(difficulty, proper_difficulty, subject)
-        test_std = test_mean * TEST_SCORE_STD_MEAN_RATIO
+        test_mean = self._get_test_mean(subject, difficulty)
         previous_scores = self.last_scores.copy()
-        self.last_scores[subject, difficulty] = min(max(np.random.normal(test_mean, test_std), 0), 100)
+        sampled_test_score = np.random.normal(test_mean, TEST_SCORE_STD)
+        self.last_scores[subject, difficulty] = min(max(sampled_test_score, 0), 100)
+        self.last_action += f'test score={self.last_scores[subject, difficulty]:.1f}'
         if not self.cumulative_train_time:
             return -5
         if self.skills_levels[subject] > TARGET_SKILL_LEVEL:
             return -5
         return 10*(sum(sum(self.last_scores - previous_scores)) / self.cumulative_train_time) - 4
 
-    def _get_test_mean(self, difficulty, proper_difficulty, subject):
+    def _get_test_mean(self, subject, difficulty):
+        proper_difficulty = sum(self.difficulties_thresholds <= self.skills_levels[subject]) - 1
         if proper_difficulty < difficulty:
-            return self._get_too_hard_test_mean(difficulty, subject)
+            return self._get_too_hard_test_mean(subject, difficulty, proper_difficulty)
         if proper_difficulty > difficulty:
             return 100
         return self._get_proper_test_mean(subject, difficulty)
 
-    def _get_too_hard_test_mean(self, difficulty, subject):
-        penalty = 1 - (self.difficulties_thresholds[difficulty] - self.skills_levels[subject]) / 100
-        return self.skills_levels[subject] * penalty
+    def _get_too_hard_test_mean(self, subject, difficulty, proper_difficulty):
+        mean_scale = len(self.difficulties_thresholds)
+        review_mean = (self.skills_levels[subject] - self.difficulties_thresholds[proper_difficulty]) * mean_scale
+        return self.review_ratio ** (difficulty - proper_difficulty) * review_mean
 
     def _get_proper_test_mean(self, subject, difficulty):
         mean_scale = len(self.difficulties_thresholds)
-        mean = (self.skills_levels[subject] - self.difficulties_thresholds[difficulty]) * mean_scale
-        return mean
+        proper_mean = (self.skills_levels[subject] - self.difficulties_thresholds[difficulty]) * mean_scale
+        review_score = self.review_ratio * 100 if difficulty else 0
+        return review_score + proper_mean
 
     def _train(self, subject, learning_unit):
         mean_gain = self.mean_skill_gains[subject, learning_unit]
         std_gain = mean_gain * STUDENT_SKILL_GAIN_STD_MEAN_RATIO
-        self.skills_levels[subject] += max(np.random.normal(mean_gain, std_gain), 0)
+        sampled_gain = np.random.normal(mean_gain, std_gain)
+        self.skills_levels[subject] += max(sampled_gain, 0)
         self.skills_levels[subject] = min(self.skills_levels[subject], 100)
+        self.last_action += f'improvement={self.skills_levels[subject]:.1f}'
         self.cumulative_train_time += (learning_unit + 1)
         return 0 - (learning_unit + 1)
 
@@ -92,7 +102,16 @@ class StudentEnv(gym.Env):
         return self.last_scores
 
     def render(self, mode='human'):
+<<<<<<< HEAD
         print('Test results matrix:\n {}, latent skill level: {}'.format(self.last_scores, self.skills_levels))
+=======
+        print(f'***\n'
+              f'Action: {self.last_action}\n'
+              f'Test matrix: \n{self.last_scores.round(1)}\n'
+              f'Latent skill level: {self.skills_levels.round(1)}\n'
+              f'***')
+        return self.last_action
+>>>>>>> 68b647ce9acbc60da0562f524c375d66dfbdd3fa
 
 
 def _get_mean_skills_gains(subjects_number, learning_units_number):
