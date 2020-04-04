@@ -102,16 +102,12 @@ class StudentEnv(gym.Env):
         return self.last_scores
 
     def render(self, mode='human'):
-<<<<<<< HEAD
-        print('Test results matrix:\n {}, latent skill level: {}'.format(self.last_scores, self.skills_levels))
-=======
         print(f'***\n'
               f'Action: {self.last_action}\n'
               f'Test matrix: \n{self.last_scores.round(1)}\n'
               f'Latent skill level: {self.skills_levels.round(1)}\n'
               f'***')
         return self.last_action
->>>>>>> 68b647ce9acbc60da0562f524c375d66dfbdd3fa
 
 
 def _get_mean_skills_gains(subjects_number, learning_units_number):
