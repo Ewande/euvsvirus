@@ -13,9 +13,11 @@ POPULATION_MIN_SKILL_GAIN = 0.2
 
 STUDENT_SKILL_GAIN_STD_MEAN_RATIO = 0.5
 
-TEST_SCORE_STD_MEAN_RATIO = 0.05
+TEST_SCORE_STD = 5
 
 TARGET_SKILL_LEVEL = 90
+
+REVIEW_RATIO = 0.25
 
 
 class StudentEnv(gym.Env):
@@ -30,6 +32,7 @@ class StudentEnv(gym.Env):
         self.last_scores = np.zeros(shape=(subjects_number, difficulties_levels))
         self.mean_skill_gains = _get_mean_skills_gains(subjects_number, learning_units_number)
         self.difficulties_thresholds = np.linspace(0, 100, num=difficulties_levels, endpoint=False)
+        self.review_ratio = 1 / (difficulties_levels + 1)
         self.cumulative_train_time = 0
         self.episode = 0
         self.last_action = None
@@ -46,33 +49,33 @@ class StudentEnv(gym.Env):
         return self.last_scores, reward, is_done, {}
 
     def _test(self, subject, difficulty):
-        skill_level = self.skills_levels[subject]
-        proper_difficulty = sum(self.difficulties_thresholds <= skill_level) - 1
-        test_mean = self._get_test_mean(difficulty, proper_difficulty, subject)
-        test_std = test_mean * TEST_SCORE_STD_MEAN_RATIO
+        test_mean = self._get_test_mean(subject, difficulty)
         previous_scores = self.last_scores.copy()
-        sampled_test_score = np.random.normal(test_mean, test_std)
+        sampled_test_score = np.random.normal(test_mean, TEST_SCORE_STD)
         self.last_scores[subject, difficulty] = min(max(sampled_test_score, 0), 100)
         self.last_action += f'test score={self.last_scores[subject, difficulty]:.1f}'
         if not self.cumulative_train_time:
             return 0 - 2
         return 10*(sum(sum(self.last_scores - previous_scores)) / self.cumulative_train_time) - 2
 
-    def _get_test_mean(self, difficulty, proper_difficulty, subject):
+    def _get_test_mean(self, subject, difficulty):
+        proper_difficulty = sum(self.difficulties_thresholds <= self.skills_levels[subject]) - 1
         if proper_difficulty < difficulty:
-            return self._get_too_hard_test_mean(difficulty, subject)
+            return self._get_too_hard_test_mean(subject, difficulty, proper_difficulty)
         if proper_difficulty > difficulty:
             return 100
         return self._get_proper_test_mean(subject, difficulty)
 
-    def _get_too_hard_test_mean(self, difficulty, subject):
-        penalty = 1 - (self.difficulties_thresholds[difficulty] - self.skills_levels[subject]) / 100
-        return self.skills_levels[subject] * penalty
+    def _get_too_hard_test_mean(self, subject, difficulty, proper_difficulty):
+        mean_scale = len(self.difficulties_thresholds)
+        review_mean = (self.skills_levels[subject] - self.difficulties_thresholds[proper_difficulty]) * mean_scale
+        return self.review_ratio ** (difficulty - proper_difficulty) * review_mean
 
     def _get_proper_test_mean(self, subject, difficulty):
         mean_scale = len(self.difficulties_thresholds)
-        mean = (self.skills_levels[subject] - self.difficulties_thresholds[difficulty]) * mean_scale
-        return mean
+        proper_mean = (self.skills_levels[subject] - self.difficulties_thresholds[difficulty]) * mean_scale
+        review_score = self.review_ratio * 100 if difficulty else 0
+        return review_score + proper_mean
 
     def _train(self, subject, learning_unit):
         mean_gain = self.mean_skill_gains[subject, learning_unit]
