@@ -52,6 +52,7 @@ class StudentEnv(gym.Env):
         self.review_ratio = 1 / (difficulties_levels + 1)
         self.cumulative_train_time = np.zeros(subjects_number)
         self.episode = 0
+        self.step_num = 0
         self.last_action = None
 
     def step(self, action):
@@ -76,6 +77,7 @@ class StudentEnv(gym.Env):
             reward = self._train(subject, learning_units, learning_difficulty)
             is_done = 0
         self.last_action['reward'] = reward
+        self.step_num += 1
         return self.last_scores, reward, is_done, {}
 
     def _test(self, subject, difficulty):
@@ -144,6 +146,7 @@ class StudentEnv(gym.Env):
         self.difficulties_thresholds = np.linspace(0, 100, num=self.difficulties_levels, endpoint=False)
         self.cumulative_train_time = np.zeros_like(self.cumulative_train_time)
         self.episode += 1
+        self.step_num = 0
         return self.last_scores
 
     def render(self, mode='human'):
@@ -153,7 +156,8 @@ class StudentEnv(gym.Env):
               f'Test matrix: \n{self.last_scores.round(1)}\n'
               f'Latent skill level: {self.skills_levels.round(1)}\n'
               f'***')
-        logging.info(json.dumps({**self.last_action, 'skills': self.skills_levels}, cls=reporting.NpEncoder))
+        logging.info(json.dumps({**self.last_action, 'skills': self.skills_levels, 'step': self.step_num},
+                                cls=reporting.NpEncoder))
         return self.last_action
 
 
