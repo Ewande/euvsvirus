@@ -11,11 +11,11 @@ MEAN_START_SKILL_LEVEL = 20
 STD_START_SKILL_LEVEL = 10
 
 
-POPULATION_MEAN_SKILL_GAIN = 2
+POPULATION_MEAN_SKILL_GAIN = 3
 POPULATION_STD_SKILL_GAIN = 1
 POPULATION_MIN_SKILL_GAIN = 0.2
 
-STUDENT_SKILL_GAIN_STD_MEAN_RATIO = 0.5
+STUDENT_SKILL_GAIN_STD = 1
 
 TEST_SCORE_STD = 5
 
@@ -26,11 +26,13 @@ REVIEW_RATIO = 0.25
 REWARD_FOR_ACHIEVING_TARGET_LEVEL = 100
 REWARD_FOR_ACHIEVING_ALL_LEVELS = 500
 
-PENALTY_FOR_UNNECESSARY_TEST = -0.5 * REWARD_FOR_ACHIEVING_TARGET_LEVEL
+PENALTY_FOR_UNNECESSARY_TEST = -500
 TIME_PENALTY_FOR_TEST = - 5
-GAIN_MULTIPLIER_FOR_TEST = 20
+GAIN_MULTIPLIER_FOR_TEST = 4
 
 NOT_ADAPTED_DIFFICULTY_PENALTY = 0.25
+
+GAIN_REWARD_RATIO = 0.1
 
 
 class StudentEnv(gym.Env):
@@ -48,7 +50,7 @@ class StudentEnv(gym.Env):
         self.mean_skill_gains = _get_mean_skills_gains(subjects_number, learning_units_number)
         self.difficulties_thresholds = np.linspace(0, 100, num=difficulties_levels, endpoint=False)
         self.review_ratio = 1 / (difficulties_levels + 1)
-        self.cumulative_train_time = 0
+        self.cumulative_train_time = np.zeros(subjects_number)
         self.episode = 0
         self.last_action = None
 
@@ -64,7 +66,7 @@ class StudentEnv(gym.Env):
 
         if is_test:
             reward = self._test(subject, test_difficulty)
-            self.cumulative_train_time = 0
+            self.cumulative_train_time[subject] = 0
             if (self.last_scores[:, -1] > TARGET_SCORE).all():
                 is_done = 1
                 reward += REWARD_FOR_ACHIEVING_ALL_LEVELS
@@ -82,7 +84,7 @@ class StudentEnv(gym.Env):
         sampled_test_score = np.random.normal(test_mean, TEST_SCORE_STD)
         self.last_scores[subject, difficulty] = min(max(sampled_test_score, 0), 100)
         self.last_action['test_score'] = self.last_scores[subject, difficulty]
-        if not self.cumulative_train_time:
+        if not self.cumulative_train_time[subject]:
             return TIME_PENALTY_FOR_TEST
         if self.last_scores[subject, difficulty] >= TARGET_SCORE:
             # if not self.skills_level_achieved[subject] and difficulty+1 == self.difficulties_level_nb:
@@ -91,7 +93,7 @@ class StudentEnv(gym.Env):
             else:
                 return PENALTY_FOR_UNNECESSARY_TEST
         return GAIN_MULTIPLIER_FOR_TEST*((self.last_scores[subject, difficulty] - previous_score)
-                                         / self.cumulative_train_time) + TIME_PENALTY_FOR_TEST
+                                         / self.cumulative_train_time[subject]) + TIME_PENALTY_FOR_TEST
 
     def _get_test_mean(self, subject, difficulty):
         proper_difficulty = self._get_proper_difficulty(subject)
@@ -115,15 +117,15 @@ class StudentEnv(gym.Env):
 
     def _train(self, subject, learning_unit, learning_difficulty):
         mean_gain = self.mean_skill_gains[subject, learning_unit]
-        std_gain = mean_gain * STUDENT_SKILL_GAIN_STD_MEAN_RATIO
-        sampled_gain = np.random.normal(mean_gain, std_gain)
+        sampled_gain = np.random.normal(mean_gain, STUDENT_SKILL_GAIN_STD)
         adjusted_gain = sampled_gain * self._get_not_adapted_learning_penalty(subject, learning_difficulty)
-        self.skills_levels[subject] += max(adjusted_gain, 0)
+        adjusted_gain = max(adjusted_gain, 0)
+        self.skills_levels[subject] += adjusted_gain
         self.skills_levels[subject] = min(self.skills_levels[subject], 100)
         self.last_action['improvement'] = max(adjusted_gain, 0)
         self.last_action['learning_unit'] = learning_unit + 1
-        self.cumulative_train_time += (learning_unit + 1)
-        return 0 - (learning_unit + 1)
+        self.cumulative_train_time[subject] += (learning_unit + 1)
+        return 0 - (learning_unit + 1) + adjusted_gain * GAIN_REWARD_RATIO
 
     def _get_not_adapted_learning_penalty(self, subject, learning_difficulty):
         proper_difficulty = self._get_proper_difficulty(subject)
@@ -140,7 +142,7 @@ class StudentEnv(gym.Env):
         self.last_scores = np.zeros_like(self.last_scores)
         self.mean_skill_gains = _get_mean_skills_gains(*self.mean_skill_gains.shape)
         self.difficulties_thresholds = np.linspace(0, 100, num=self.difficulties_levels, endpoint=False)
-        self.cumulative_train_time = 0
+        self.cumulative_train_time = np.zeros_like(self.cumulative_train_time)
         self.episode += 1
         return self.last_scores
 
