@@ -40,7 +40,7 @@ class StudentEnv(gym.Env):
         else:
             reward = self._train(action[1], action[2])
         is_done = all(self.skills_levels > TARGET_SKILL_LEVEL)
-        return self.last_scores, reward, is_done, {'episode': self.episode}
+        return self.last_scores, reward, is_done, {}
 
     def _test(self, subject, difficulty):
         skill_level = self.skills_levels[subject]
@@ -50,8 +50,10 @@ class StudentEnv(gym.Env):
         previous_scores = self.last_scores.copy()
         self.last_scores[subject, difficulty] = min(max(np.random.normal(test_mean, test_std), 0), 100)
         if not self.cumulative_train_time:
-            return 0 - 2
-        return 10*(sum(sum(self.last_scores - previous_scores)) / self.cumulative_train_time) - 2
+            return -5
+        if self.skills_levels[subject] > TARGET_SKILL_LEVEL:
+            return -5
+        return 10*(sum(sum(self.last_scores - previous_scores)) / self.cumulative_train_time) - 4
 
     def _get_test_mean(self, difficulty, proper_difficulty, subject):
         if proper_difficulty < difficulty:
@@ -75,7 +77,7 @@ class StudentEnv(gym.Env):
         self.skills_levels[subject] += max(np.random.normal(mean_gain, std_gain), 0)
         self.skills_levels[subject] = min(self.skills_levels[subject], 100)
         self.cumulative_train_time += (learning_unit + 1)
-        return -(learning_unit + 1)
+        return 0 - (learning_unit + 1)
 
     def reset(self):
         self.skills_levels = np.maximum(
@@ -90,7 +92,7 @@ class StudentEnv(gym.Env):
         return self.last_scores
 
     def render(self, mode='human'):
-        print('Test matrix: {}, latent skill level: {}'.format(self.last_scores, self.skills_levels))
+        print('Test results matrix:\n {}, latent skill level: {}'.format(self.last_scores, self.skills_levels))
 
 
 def _get_mean_skills_gains(subjects_number, learning_units_number):
