@@ -1,7 +1,11 @@
+import json
+import logging
+
 import gym
 from gym import spaces
 import numpy as np
 
+import reporting
 
 MEAN_START_SKILL_LEVEL = 20
 STD_START_SKILL_LEVEL = 10
@@ -48,7 +52,11 @@ class StudentEnv(gym.Env):
 
     def step(self, action):
         assert self.action_space.contains(action)
-        self.last_action = ('test' if action[0] else 'train') + f';subject={action[1] + 1};difficulty={action[2] + 1};'
+        self.last_action = {
+            'action': ['train', 'test'][action[0]],
+            'subject': action[1] + 1,
+            'difficulty': action[2] + 1,
+        }
 
         if action[0]:
             reward = self._test(action[1], action[2])
@@ -60,7 +68,7 @@ class StudentEnv(gym.Env):
         else:
             reward = self._train(action[1], action[2])
             is_done = 0
-        self.last_action += f';reward={reward}'
+        self.last_action['reward'] = reward
         return self.last_scores, reward, is_done, {}
 
     def _test(self, subject, difficulty):
@@ -68,7 +76,7 @@ class StudentEnv(gym.Env):
         previous_score = self.last_scores[subject, difficulty]
         sampled_test_score = np.random.normal(test_mean, TEST_SCORE_STD)
         self.last_scores[subject, difficulty] = min(max(sampled_test_score, 0), 100)
-        self.last_action += f'test score={self.last_scores[subject, difficulty]:.1f}'
+        self.last_action['test_score'] = self.last_scores[subject, difficulty]
         if not self.cumulative_train_time:
             return TIME_PENALTY_FOR_TEST
         if self.skills_levels[subject] > TARGET_SKILL_LEVEL:
@@ -106,7 +114,7 @@ class StudentEnv(gym.Env):
         sampled_gain = np.random.normal(mean_gain, std_gain)
         self.skills_levels[subject] += max(sampled_gain, 0)
         self.skills_levels[subject] = min(self.skills_levels[subject], 100)
-        self.last_action += f'improvement={max(sampled_gain, 0):.1f}'
+        self.last_action['improvement'] = max(sampled_gain, 0)
         self.cumulative_train_time += (learning_unit + 1)
         return 0 - (learning_unit + 1)
 
@@ -124,11 +132,13 @@ class StudentEnv(gym.Env):
         return self.last_scores
 
     def render(self, mode='human'):
+        action_to_str = ';'.join(f'{k}={v}' for k, v in self.last_action.items())
         print(f'***\n'
-              f'Action: {self.last_action}\n'
+              f'Action: {action_to_str}\n'
               f'Test matrix: \n{self.last_scores.round(1)}\n'
               f'Latent skill level: {self.skills_levels.round(1)}\n'
               f'***')
+        logging.info(json.dumps({**self.last_action, 'skills': self.skills_levels}, cls=reporting.NpEncoder))
         return self.last_action
 
 
