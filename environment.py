@@ -55,10 +55,11 @@ class StudentEnv(gym.Env):
     def step(self, action):
         assert self.action_space.contains(action)
         is_test, subject, test_difficulty, learning_units, learning_difficulty = action
+        difficulty_to_log = test_difficulty if is_test else learning_difficulty
         self.last_action = {
             'action': ['train', 'test'][is_test],
             'subject': subject + 1,
-            'difficulty': test_difficulty + 1,
+            'difficulty': difficulty_to_log + 1
         }
 
         if is_test:
@@ -120,6 +121,7 @@ class StudentEnv(gym.Env):
         self.skills_levels[subject] += max(adjusted_gain, 0)
         self.skills_levels[subject] = min(self.skills_levels[subject], 100)
         self.last_action['improvement'] = max(adjusted_gain, 0)
+        self.last_action['learning_unit'] = learning_unit + 1
         self.cumulative_train_time += (learning_unit + 1)
         return 0 - (learning_unit + 1)
 
