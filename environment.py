@@ -55,7 +55,7 @@ class StudentEnv(gym.Env):
 
     def _test(self, subject, difficulty):
         test_mean = self._get_test_mean(subject, difficulty)
-        previous_scores = self.last_scores.copy()
+        previous_score = self.last_scores[subject, difficulty]
         sampled_test_score = np.random.normal(test_mean, TEST_SCORE_STD)
         self.last_scores[subject, difficulty] = min(max(sampled_test_score, 0), 100)
         self.last_action += f'test score={self.last_scores[subject, difficulty]:.1f}'
@@ -67,7 +67,7 @@ class StudentEnv(gym.Env):
             else:
                 self.skills_level_achieved[subject] = 1
                 return REWARD_FOR_ACHIEVING_TARGET_LEVEL
-        return 10*(sum(sum(self.last_scores - previous_scores)) / self.cumulative_train_time) - 4
+        return 10*((self.last_scores[subject, difficulty] - previous_score) / self.cumulative_train_time) - 4
 
     def _get_test_mean(self, subject, difficulty):
         proper_difficulty = sum(self.difficulties_thresholds <= self.skills_levels[subject]) - 1
