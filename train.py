@@ -1,13 +1,17 @@
-import gym
-from stable_baselines import PPO2
 from stable_baselines.common.policies import MlpPolicy
-import environment
-import tensorflow
+from stable_baselines import TRPO
 
-# The algorithms require a vectorized environment to run
-env = environment.StudentEnv(subjects_number=2)
-model = PPO2(MlpPolicy, env, verbose=1)
-model.learn(total_timesteps=20000)
+from environment import StudentEnv
+
+env = StudentEnv()
+
+model = TRPO(MlpPolicy, env, verbose=1)
+model.learn(total_timesteps=25000)
+model.save("a2c_cartpole")
+
+del model  # remove to demonstrate saving and loading
+
+model = TRPO.load("a2c_cartpole")
 
 obs = env.reset()
 for i in range(2000):
