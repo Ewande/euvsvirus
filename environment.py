@@ -148,4 +148,4 @@ def _get_mean_skills_gains(subjects_number, learning_units_number):
                                                                                       learning_units_number)),
         np.full(shape=(subjects_number, learning_units_number), fill_value=POPULATION_MIN_SKILL_GAIN)
     )
-    return np.cumsum(interval_mean_skill_gains, axis=0)
+    return np.cumsum(interval_mean_skill_gains, axis=1)
