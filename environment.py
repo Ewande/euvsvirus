@@ -46,10 +46,11 @@ class StudentEnv(gym.Env):
 
         if action[0]:
             reward = self._test(action[1], action[2])
+            is_done = all(self.skills_levels > TARGET_SKILL_LEVEL)
         else:
             reward = self._train(action[1], action[2])
+            is_done = 0
         self.last_action += f';reward={reward}'
-        is_done = all(self.skills_levels > TARGET_SKILL_LEVEL)
         return self.last_scores, reward, is_done, {}
 
     def _test(self, subject, difficulty):
@@ -62,7 +63,7 @@ class StudentEnv(gym.Env):
             return -5
         if self.skills_levels[subject] > TARGET_SKILL_LEVEL:
             if self.skills_level_achieved[subject]:
-                return -10
+                return -50
             else:
                 self.skills_level_achieved[subject] = 1
                 return REWARD_FOR_ACHIEVING_TARGET_LEVEL
