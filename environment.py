@@ -19,6 +19,8 @@ TARGET_SKILL_LEVEL = 90
 
 REVIEW_RATIO = 0.25
 
+REWARD_FOR_ACHIEVING_TARGET_LEVEL = 100
+
 
 class StudentEnv(gym.Env):
     def __init__(self, subjects_number=4, difficulties_levels=3, learning_units_number=3):
@@ -36,6 +38,7 @@ class StudentEnv(gym.Env):
         self.cumulative_train_time = 0
         self.episode = 0
         self.last_action = None
+        self.skills_level_achieved = np.zeros((subjects_number, 1))
 
     def step(self, action):
         assert self.action_space.contains(action)
@@ -57,7 +60,11 @@ class StudentEnv(gym.Env):
         if not self.cumulative_train_time:
             return -5
         if self.skills_levels[subject] > TARGET_SKILL_LEVEL:
-            return -5
+            if self.skills_level_achieved[subject]:
+                return -10
+            else:
+                self.skills_level_achieved[subject] = 1
+                return REWARD_FOR_ACHIEVING_TARGET_LEVEL
         return 10*(sum(sum(self.last_scores - previous_scores)) / self.cumulative_train_time) - 4
 
     def _get_test_mean(self, subject, difficulty):
