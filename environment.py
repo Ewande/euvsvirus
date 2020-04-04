@@ -36,12 +36,13 @@ class StudentEnv(gym.Env):
 
     def step(self, action):
         assert self.action_space.contains(action)
-        self.last_action = ('test' if action[0] else 'train') + f';subject={action[1] + 1};diff={action[2] + 1};'
+        self.last_action = ('test' if action[0] else 'train') + f';subject={action[1] + 1};difficulty={action[2] + 1};'
 
         if action[0]:
             reward = self._test(action[1], action[2])
         else:
             reward = self._train(action[1], action[2])
+        self.last_action += f';reward={reward}'
         is_done = all(self.skills_levels > TARGET_SKILL_LEVEL)
         return self.last_scores, reward, is_done, {}
 
@@ -80,7 +81,7 @@ class StudentEnv(gym.Env):
         sampled_gain = np.random.normal(mean_gain, std_gain)
         self.skills_levels[subject] += max(sampled_gain, 0)
         self.skills_levels[subject] = min(self.skills_levels[subject], 100)
-        self.last_action += f'improvement={self.skills_levels[subject]:.1f}'
+        self.last_action += f'improvement={max(sampled_gain, 0):.1f}'
         self.cumulative_train_time += (learning_unit + 1)
         return -(learning_unit + 1)
 
