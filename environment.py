@@ -156,7 +156,8 @@ class StudentEnv(gym.Env):
               f'Test matrix: \n{self.last_scores.round(1)}\n'
               f'Latent skill level: {self.skills_levels.round(1)}\n'
               f'***')
-        logging.info(json.dumps({**self.last_action, 'skills': self.skills_levels, 'step': self.step_num},
+        logging.info(json.dumps({**self.last_action, 'skills': self.skills_levels, 'step': self.step_num,
+                                 'episode': self.episode},
                                 cls=reporting.NpEncoder))
         return self.last_action
 
