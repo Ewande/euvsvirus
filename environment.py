@@ -21,12 +21,7 @@ TARGET_SKILL_LEVEL = 90
 class StudentEnv(gym.Env):
     def __init__(self, subjects_number=4, difficulties_levels=3, learning_units_number=3):
         super(StudentEnv).__init__()
-        self.action_space = spaces.Dict({
-            'is_test': spaces.Discrete(2),
-            'subject': spaces.Discrete(subjects_number),
-            'test_difficulty': spaces.Discrete(difficulties_levels),
-            'learning_unit': spaces.Discrete(learning_units_number)
-        })
+        self.action_space = spaces.MultiDiscrete([2, subjects_number, difficulties_levels, learning_units_number])
         self.observation_space = spaces.Box(low=0, high=100, shape=(subjects_number, difficulties_levels))
         self.skills_levels = np.maximum(
             np.random.normal(MEAN_START_SKILL_LEVEL, STD_START_SKILL_LEVEL, size=subjects_number),
@@ -36,15 +31,16 @@ class StudentEnv(gym.Env):
         self.mean_skill_gains = _get_mean_skills_gains(subjects_number, learning_units_number)
         self.difficulties_thresholds = np.linspace(0, 100, num=difficulties_levels, endpoint=False)
         self.cumulative_train_time = 0
+        self.episode = 0
 
     def step(self, action):
         assert self.action_space.contains(action)
-        if action['is_test']:
-            reward = self._test(action['subject'], action['test_difficulty'])
+        if action[0]:
+            reward = self._test(action[1], action[2])
         else:
-            reward = self._train(action['subject'], action['learning_unit'])
+            reward = self._train(action[1], action[2])
         is_done = all(self.skills_levels > TARGET_SKILL_LEVEL)
-        return self.last_scores, reward, is_done, None
+        return self.last_scores, reward, is_done, {'episode': self.episode}
 
     def _test(self, subject, difficulty):
         skill_level = self.skills_levels[subject]
@@ -54,8 +50,8 @@ class StudentEnv(gym.Env):
         previous_scores = self.last_scores.copy()
         self.last_scores[subject, difficulty] = min(max(np.random.normal(test_mean, test_std), 0), 100)
         if not self.cumulative_train_time:
-            return 0
-        return sum(sum(self.last_scores - previous_scores)) / self.cumulative_train_time
+            return 0 - 2
+        return 10*(sum(sum(self.last_scores - previous_scores)) / self.cumulative_train_time) - 2
 
     def _get_test_mean(self, difficulty, proper_difficulty, subject):
         if proper_difficulty < difficulty:
@@ -77,8 +73,9 @@ class StudentEnv(gym.Env):
         mean_gain = self.mean_skill_gains[subject, learning_unit]
         std_gain = mean_gain * STUDENT_SKILL_GAIN_STD_MEAN_RATIO
         self.skills_levels[subject] += max(np.random.normal(mean_gain, std_gain), 0)
+        self.skills_levels[subject] = min(self.skills_levels[subject], 100)
         self.cumulative_train_time += (learning_unit + 1)
-        return 0
+        return -(learning_unit + 1)
 
     def reset(self):
         self.skills_levels = np.maximum(
@@ -89,10 +86,11 @@ class StudentEnv(gym.Env):
         self.mean_skill_gains = _get_mean_skills_gains(*self.mean_skill_gains.shape)
         self.difficulties_thresholds = np.linspace(0, 100, num=len(self.difficulties_thresholds), endpoint=False)
         self.cumulative_train_time = 0
+        self.episode += 1
         return self.last_scores
 
     def render(self, mode='human'):
-        pass
+        print('Test matrix: {}, latent skill level: {}'.format(self.last_scores, self.skills_levels))
 
 
 def _get_mean_skills_gains(subjects_number, learning_units_number):
