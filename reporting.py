@@ -16,7 +16,7 @@ class NpEncoder(json.JSONEncoder):
             return super(NpEncoder, self).default(obj)
 
 
-def setup_logging(filename=None, level=logging.INFO):
+def setup_logging(filename=None, level=logging.INFO, mode='a'):
     logger = logging.getLogger()
     logger.setLevel(level)
 
@@ -26,5 +26,5 @@ def setup_logging(filename=None, level=logging.INFO):
 
     # file
     if filename is not None:
-        file_handler = logging.FileHandler(filename, mode='w')
+        file_handler = logging.FileHandler(filename, mode=mode)
         logger.addHandler(file_handler)
