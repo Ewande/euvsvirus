@@ -16,7 +16,7 @@ def estimate_skills(test_scores, review_ratio):
     interval_range = 100 / test_scores.shape[1]
     intervals = [np.array([start, start + interval_range])
                  for start in np.linspace(0, 100, num=test_scores.shape[1], endpoint=False)]
-    intervals = np.array(3 * [intervals])
+    intervals = np.array(test_scores.shape[0] * [intervals])
     result = np.zeros_like(test_scores)
     for i, row in enumerate(test_scores):
         for j, item in enumerate(row):
