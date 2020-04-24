@@ -14,6 +14,7 @@ STD_START_SKILL_LEVEL = 10
 
 POPULATION_MEAN_SKILL_GAIN = 3
 POPULATION_STD_SKILL_GAIN = 1
+POPULATION_STD_TYPE_GAIN = 0.2
 POPULATION_MIN_SKILL_GAIN = 0.2
 
 STUDENT_SKILL_GAIN_STD = 1
@@ -169,9 +170,11 @@ class StudentEnv(gym.Env):
 
 
 def _get_mean_skills_gains(subjects_number, learning_types_number):
+    skill_gain_matrix = np.tile(np.random.normal(POPULATION_MEAN_SKILL_GAIN, POPULATION_STD_SKILL_GAIN,
+                                            size=(learning_types_number)), (subjects_number, 1))
+    skill_gain_matrix += np.random.normal(0, POPULATION_STD_TYPE_GAIN, size=(subjects_number, learning_types_number))
     interval_mean_skill_gains = np.maximum(
-        np.random.normal(POPULATION_MEAN_SKILL_GAIN, POPULATION_STD_SKILL_GAIN, size=(subjects_number,
-                                                                                      learning_types_number)),
+        skill_gain_matrix,
         np.full(shape=(subjects_number, learning_types_number), fill_value=POPULATION_MIN_SKILL_GAIN)
     )
     return interval_mean_skill_gains
