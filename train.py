@@ -12,8 +12,8 @@ USE_RANDOM = False
 env = StudentEnv(subjects_number=2)
 # if Path('ppo2.zip').exists():
 #     model = PPO2.load('ppo2')
-if Path('ppo2_.zip').exists():
-    model = TRPO.load('ppo2_2048')
+if Path('ppo2_skills_estimation.zip').exists():
+    model = PPO2.load('ppo2_skills_estimation')
 else:
     model = PPO2(MlpPolicy, env, verbose=1, gamma=0.9)
     model.learn(total_timesteps=250000)
@@ -24,7 +24,7 @@ if USE_RANDOM:
 else:
     setup_logging('application_trpo.log')
 
-for ep in range(200):
+for ep in range(5):
     obs = env.reset()
     for i in range(20000):
         if USE_RANDOM:

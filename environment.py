@@ -37,10 +37,10 @@ GAIN_REWARD_RATIO = 0.1
 
 
 class StudentEnv(gym.Env):
-    def __init__(self, subjects_number=4, difficulties_levels=3, learning_units_number=3):
+    def __init__(self, subjects_number=4, difficulties_levels=3, learning_type_number=3):
         super(StudentEnv).__init__()
         self.action_space = spaces.MultiDiscrete([2, subjects_number, difficulties_levels,
-                                                  learning_units_number, difficulties_levels])
+                                                  learning_type_number, difficulties_levels])
         self.observation_space = spaces.Box(low=0, high=100, shape=(subjects_number, difficulties_levels))
         self.difficulties_levels = difficulties_levels
         self.skills_levels = np.maximum(
@@ -48,7 +48,7 @@ class StudentEnv(gym.Env):
             np.zeros(subjects_number)
         )
         self.last_scores = np.zeros(shape=(subjects_number, difficulties_levels))
-        self.mean_skill_gains = _get_mean_skills_gains(subjects_number, learning_units_number)
+        self.mean_skill_gains = _get_mean_skills_gains(subjects_number, learning_type_number)
         self.difficulties_thresholds = np.linspace(0, 100, num=difficulties_levels, endpoint=False)
         self.review_ratio = 1 / (difficulties_levels + 1)
         self.cumulative_train_time = np.zeros(subjects_number)
@@ -58,7 +58,7 @@ class StudentEnv(gym.Env):
 
     def step(self, action):
         assert self.action_space.contains(action)
-        is_test, subject, test_difficulty, learning_units, learning_difficulty = action
+        is_test, subject, test_difficulty, learning_types, learning_difficulty = action
         difficulty_to_log = test_difficulty if is_test else learning_difficulty
         self.last_action = {
             'action': ['train', 'test'][is_test],
@@ -75,7 +75,7 @@ class StudentEnv(gym.Env):
             else:
                 is_done = 0
         else:
-            reward = self._train(subject, learning_units, learning_difficulty)
+            reward = self._train(subject, learning_types, learning_difficulty)
             is_done = 0
         self.last_action['reward'] = reward
         self.step_num += 1
@@ -118,8 +118,8 @@ class StudentEnv(gym.Env):
     def _get_scaled_mean_score(self, subject, difficulty):
         return (self.skills_levels[subject] - self.difficulties_thresholds[difficulty]) * self.difficulties_levels
 
-    def _train(self, subject, learning_unit, learning_difficulty):
-        mean_gain = self.mean_skill_gains[subject, learning_unit]
+    def _train(self, subject, learning_type, learning_difficulty):
+        mean_gain = self.mean_skill_gains[subject, learning_type]
         sampled_gain = np.random.normal(mean_gain, STUDENT_SKILL_GAIN_STD)
         adjusted_gain = sampled_gain * self._get_not_adapted_learning_penalty(
             self.skills_levels[subject], learning_difficulty)
@@ -127,13 +127,13 @@ class StudentEnv(gym.Env):
         self.skills_levels[subject] += adjusted_gain
         self.skills_levels[subject] = min(self.skills_levels[subject], 100)
         self.last_action['improvement'] = max(adjusted_gain, 0)
-        self.last_action['learning_unit'] = learning_unit + 1
-        self.cumulative_train_time[subject] += (learning_unit + 1)
+        self.last_action['learning_type'] = learning_type + 1
+        self.cumulative_train_time[subject] += (learning_type + 1)
         estimated_skill = estimate_skills(self.last_scores, REVIEW_RATIO)[subject]
         estimated_penalty = self._get_not_adapted_learning_penalty(estimated_skill, learning_difficulty)
-        estimated_gain = POPULATION_MEAN_SKILL_GAIN * learning_unit
+        estimated_gain = POPULATION_MEAN_SKILL_GAIN * learning_type
         adapted_learning_reward = estimated_penalty * estimated_gain * GAIN_REWARD_RATIO
-        return 0 - (learning_unit + 1) + adapted_learning_reward
+        return 0 - (learning_type + 1) + adapted_learning_reward
 
     def _get_not_adapted_learning_penalty(self, skill, learning_difficulty):
         proper_difficulty = self._get_proper_difficulty(skill)
@@ -168,10 +168,10 @@ class StudentEnv(gym.Env):
         return self.last_action
 
 
-def _get_mean_skills_gains(subjects_number, learning_units_number):
+def _get_mean_skills_gains(subjects_number, learning_types_number):
     interval_mean_skill_gains = np.maximum(
         np.random.normal(POPULATION_MEAN_SKILL_GAIN, POPULATION_STD_SKILL_GAIN, size=(subjects_number,
-                                                                                      learning_units_number)),
-        np.full(shape=(subjects_number, learning_units_number), fill_value=POPULATION_MIN_SKILL_GAIN)
+                                                                                      learning_types_number)),
+        np.full(shape=(subjects_number, learning_types_number), fill_value=POPULATION_MIN_SKILL_GAIN)
     )
-    return np.cumsum(interval_mean_skill_gains, axis=1)
+    return interval_mean_skill_gains
