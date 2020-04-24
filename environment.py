@@ -13,24 +13,24 @@ STD_START_SKILL_LEVEL = 10
 
 
 POPULATION_MEAN_SKILL_GAIN = 3
-POPULATION_STD_SKILL_GAIN = 1
+POPULATION_STD_SKILL_GAIN = 2
 POPULATION_STD_TYPE_GAIN = 0.2
 POPULATION_MIN_SKILL_GAIN = 0.2
 
 STUDENT_SKILL_GAIN_STD = 1
 
-TEST_SCORE_STD = 5
+TEST_SCORE_STD = 4
 
 TARGET_SCORE = 90
 
 REVIEW_RATIO = 0.25
 
 REWARD_FOR_ACHIEVING_TARGET_LEVEL = 100
-REWARD_FOR_ACHIEVING_ALL_LEVELS = 500
+REWARD_FOR_ACHIEVING_ALL_LEVELS = 1000
 
 PENALTY_FOR_UNNECESSARY_TEST = -500
 TIME_PENALTY_FOR_TEST = - 5
-GAIN_MULTIPLIER_FOR_TEST = 4
+GAIN_MULTIPLIER_FOR_TEST = 0
 
 NOT_ADAPTED_DIFFICULTY_PENALTY = 0.25
 
@@ -78,6 +78,7 @@ class StudentEnv(gym.Env):
         else:
             reward = self._train(subject, learning_types, learning_difficulty)
             is_done = 0
+        reward += - np.sqrt(self.step_num)
         self.last_action['reward'] = reward
         self.step_num += 1
         return self.last_scores, reward, is_done, {}
@@ -134,7 +135,8 @@ class StudentEnv(gym.Env):
         estimated_penalty = self._get_not_adapted_learning_penalty(estimated_skill, learning_difficulty)
         estimated_gain = POPULATION_MEAN_SKILL_GAIN * learning_type
         adapted_learning_reward = estimated_penalty * estimated_gain * GAIN_REWARD_RATIO
-        return 0 - (learning_type + 1) + adapted_learning_reward
+        return 0
+        # return 0 - (learning_type + 1) + adapted_learning_reward
 
     def _get_not_adapted_learning_penalty(self, skill, learning_difficulty):
         proper_difficulty = self._get_proper_difficulty(skill)
