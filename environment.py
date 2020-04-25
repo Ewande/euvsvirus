@@ -38,29 +38,43 @@ GAIN_REWARD_RATIO = 0.1
 
 
 class StudentEnv(gym.Env):
-    def __init__(self, subjects_number=3, difficulties_levels=3, learning_type_number=3):
+    def __init__(self, num_subjects=3, num_difficulty_levels=3, num_learning_types=3):
         super(StudentEnv).__init__()
-        self.action_space = spaces.MultiDiscrete([2, subjects_number, difficulties_levels,
-                                                  learning_type_number, difficulties_levels])
-        high_bound_observation_space_vector = np.array([100, 100, *[sys.maxsize] * learning_type_number,
-                                                        *[100] * learning_type_number])
+        self.action_space = spaces.MultiDiscrete([
+            2,  # train or test
+            num_subjects,  # which subject the action refers to
+            num_difficulty_levels,  # test difficulty level (not used if action=train)
+            num_learning_types,  # train type (not used if action=test)
+            num_difficulty_levels  # train difficulty level (not used if action=test)
+        ])
+        low_bound_observation_space_vector = np.array([
+            0,  # min test score
+            -100,  # min difference between previous test score and current test score (later called gain)
+            *np.repeat(0, num_learning_types),  # min number of trainings since last test for each learning type
+            *np.repeat(-100, num_learning_types),  # min gain attributed to each learning type
+        ])
+        high_bound_observation_space_vector = np.array([
+            100,  # max test score
+            100,  # max difference between previous test score and current test score (later called gain)
+            *np.repeat(sys.maxsize, num_learning_types),  # max number of trainings since last test for each learning type
+            *np.repeat(100, num_learning_types),  # max gain attributed to each learning type
+        ])
+
         self.observation_space = spaces.Box(
-            low=np.zeros((subjects_number, difficulties_levels, 2 * learning_type_number + 2))
-            ,
-            high=np.tile(high_bound_observation_space_vector[None, None, :], (subjects_number, difficulties_levels, 1))
-            # ,shape=(subjects_number, difficulties_levels)
+            low=np.tile(low_bound_observation_space_vector, (num_subjects, num_difficulty_levels, 1)),
+            high=np.tile(high_bound_observation_space_vector, (num_subjects, num_difficulty_levels, 1))
         )
-        self.difficulties_levels = difficulties_levels
-        self.learning_type_number = learning_type_number
+        self.difficulties_levels = num_difficulty_levels
+        self.learning_type_number = num_learning_types
         self.skills_levels = np.maximum(
-            np.random.normal(MEAN_START_SKILL_LEVEL, STD_START_SKILL_LEVEL, size=subjects_number), 0
+            np.random.normal(MEAN_START_SKILL_LEVEL, STD_START_SKILL_LEVEL, size=num_subjects), 0
         )
-        self.last_scores = np.zeros(shape=(subjects_number, difficulties_levels, 2 * learning_type_number + 2))
-        self.mean_skill_gains = _get_mean_skills_gains(subjects_number, learning_type_number)
-        self.difficulties_thresholds = np.linspace(0, 100, num=difficulties_levels, endpoint=False)
-        self.review_ratio = 1 / (difficulties_levels + 1)
-        self.cumulative_train_time = np.zeros(subjects_number)
-        self.train_counter = np.zeros((subjects_number, difficulties_levels, learning_type_number))
+        self.last_scores = np.zeros(shape=(num_subjects, num_difficulty_levels, 2 * num_learning_types + 2))
+        self.mean_skill_gains = _get_mean_skills_gains(num_subjects, num_learning_types)
+        self.difficulties_thresholds = np.linspace(0, 100, num=num_difficulty_levels, endpoint=False)
+        self.review_ratio = 1 / (num_difficulty_levels + 1)
+        self.cumulative_train_time = np.zeros(num_subjects)
+        self.train_counter = np.zeros((num_subjects, num_difficulty_levels, num_learning_types))
         self.episode = 0
         self.step_num = 0
         self.last_action = None

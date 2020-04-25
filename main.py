@@ -54,7 +54,7 @@ def test(model_path, num_episodes, num_steps, logging_path):
     setup_logging(logging_path or f'{model_path}.log')
 
     model = SUPPORTED_MODEL_TYPES[metadata['model_type']].load(model_path)
-    env = StudentEnv(subjects_number=metadata['num_subjects'])
+    env = StudentEnv(num_subjects=metadata['num_subjects'])
     _run_env(model, env, num_episodes, num_steps)
 
 
