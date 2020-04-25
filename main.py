@@ -77,6 +77,7 @@ def _run_env(model, env, num_episodes, num_steps):
     for ep in range(num_episodes):
         i = _run_episode(model, env, num_steps)
         print(ep, i)
+        print(env.mean_skill_gains)
 
 
 def _run_episode(model, env, num_steps):
