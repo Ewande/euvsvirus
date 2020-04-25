@@ -94,9 +94,9 @@ class StudentEnv(gym.Env):
     def _test(self, subject, difficulty):
         test_mean = self._get_test_mean(subject, difficulty)
         previous_score = self.last_scores[subject, difficulty, 0]
-        sampled_test_score = np.random.normal(test_mean, TEST_SCORE_STD)
-        self.last_scores[subject, difficulty, 1] = sampled_test_score - self.last_scores[subject, difficulty, 0]
-        self.last_scores[subject, difficulty, 0] = min(max(sampled_test_score, 0), 100)
+        sampled_test_score = min(max(np.random.normal(test_mean, TEST_SCORE_STD), 0), 100)
+        self.last_scores[subject, difficulty, 1] = sampled_test_score - previous_score
+        self.last_scores[subject, difficulty, 0] = sampled_test_score
         self.last_scores[subject, difficulty, -self.learning_type_number:] = self._get_mean_type_gain(subject,
                                                                                                       difficulty)
         self.last_scores[subject, difficulty, 2:2 + self.learning_type_number] = 0
@@ -113,23 +113,23 @@ class StudentEnv(gym.Env):
                                            / self.cumulative_train_time[subject]) + TIME_PENALTY_FOR_TEST
 
     def _get_mean_type_gain(self, subject, difficulty):
-        if np.sum(self.last_scores[subject, difficulty, 2:2 + self.learning_type_number]) > 0:
-            ratio = self.last_scores[subject, difficulty, 2:2 + self.learning_type_number] / \
-                    np.sum(self.last_scores[subject, difficulty, 2:2 + self.learning_type_number])
+        num_trainings_since_last_test = self.last_scores[subject, difficulty, 2:2 + self.learning_type_number]
+        if np.sum(num_trainings_since_last_test) > 0:
+            ratio = num_trainings_since_last_test / np.sum(num_trainings_since_last_test)
             new_gain = ratio * self.last_scores[subject, difficulty, 1]
-            result = -1 * np.ones(self.learning_type_number)
+            result = -np.ones(self.learning_type_number)
             for idx, elem in enumerate(zip(self.last_scores[subject, difficulty, -self.learning_type_number:], new_gain)):
                 last_avg, new_avg = elem
-                if (self.train_counter[subject, difficulty, idx]==0 and self.last_scores[subject, difficulty, 2 + idx]==0):
+                if self.train_counter[subject, difficulty, idx] == 0:
                     result[idx] = 0
                 else:
                     result[idx] = np.average([last_avg, new_avg],
-                                         weights=[self.train_counter[subject, difficulty, idx],
-                                                  self.last_scores[subject, difficulty, 2 + idx]])
-                self.train_counter[subject, difficulty, idx] += self.last_scores[subject, difficulty, 2 + idx]
+                                             weights=[self.train_counter[subject, difficulty, idx],
+                                                      num_trainings_since_last_test[idx]])
+            self.train_counter[subject, difficulty, :] += num_trainings_since_last_test
             return result
         else:
-            return np.zeros(self.learning_type_number)
+            return self.last_scores[subject, difficulty, -self.learning_type_number:]
 
     def _get_test_mean(self, subject, difficulty):
         proper_difficulty = self._get_proper_difficulty(self.skills_levels[subject])
@@ -162,7 +162,7 @@ class StudentEnv(gym.Env):
         self.last_action['improvement'] = max(adjusted_gain, 0)
         self.last_action['learning_type'] = learning_type + 1
         self.cumulative_train_time[subject] += (learning_type + 1)
-        self.train_counter[subject, learning_difficulty, learning_type] += 1
+        self.last_scores[subject, learning_difficulty, 2 + learning_type] += 1
         estimated_skill = estimate_skills(self.last_scores[:, :, 0], REVIEW_RATIO)[subject]
         estimated_penalty = self._get_not_adapted_learning_penalty(estimated_skill, learning_difficulty)
         estimated_gain = POPULATION_MEAN_SKILL_GAIN * learning_type
