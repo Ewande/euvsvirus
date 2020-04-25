@@ -9,33 +9,36 @@ import reporting
 from utils import estimate_skills
 import sys
 from tabulate import tabulate
+import copy
 
 MEAN_START_SKILL_LEVEL = 20
 STD_START_SKILL_LEVEL = 10
 
-POPULATION_MEAN_SKILL_GAIN = 3
-POPULATION_STD_SKILL_GAIN = 2
-POPULATION_STD_TYPE_GAIN = 0.2
-POPULATION_MIN_SKILL_GAIN = 0.2
+POPULATION_MEAN_SKILL_GAIN = 2
+POPULATION_STD_SKILL_GAIN = 1.8
+POPULATION_STD_TYPE_GAIN = 0.01
+POPULATION_MIN_SKILL_GAIN = 0.1
 
-STUDENT_SKILL_GAIN_STD = 1
+STUDENT_SKILL_GAIN_STD = 0.2
 
-TEST_SCORE_STD = 4
+TEST_SCORE_STD = 0.5
 
 TARGET_SCORE = 95
 
 REVIEW_RATIO = 0.25
 
-REWARD_FOR_ACHIEVING_TARGET_LEVEL = 100
-REWARD_FOR_ACHIEVING_ALL_LEVELS = 1000
+REWARD_FOR_ACHIEVING_TARGET_LEVEL = 200
+REWARD_FOR_ACHIEVING_ALL_LEVELS = 2000
 
-PENALTY_FOR_UNNECESSARY_TEST = -500
-TIME_PENALTY_FOR_TEST = - 5
-GAIN_MULTIPLIER_FOR_TEST = 0
+PENALTY_FOR_UNNECESSARY_TEST = -700
+TIME_PENALTY_FOR_TEST = - 2
+GAIN_MULTIPLIER_FOR_TEST = 11
 
 NOT_ADAPTED_DIFFICULTY_PENALTY = 0.25
 
 GAIN_REWARD_RATIO = 0.1
+
+PROPER_LEARNING_TYPE_REWARD = 0
 
 
 class StudentEnv(gym.Env):
@@ -95,11 +98,15 @@ class StudentEnv(gym.Env):
     def _test(self, subject, difficulty):
         test_mean = self._get_test_mean(subject, difficulty)
         previous_score = self.last_scores[subject, difficulty, 0]
+        previous_scores = copy.copy(self.last_scores[:, :, 0])
         sampled_test_score = min(max(np.random.normal(test_mean, TEST_SCORE_STD), 0), 100)
         self.last_scores[subject, difficulty, 1] = sampled_test_score - previous_score
         self.last_scores[subject, difficulty, 0] = sampled_test_score
-        self.last_scores[subject, difficulty, -self.learning_type_number:] = self._get_mean_type_gain(subject,
-                                                                                                      difficulty)
+        estimated_improvement = estimate_skills(self.last_scores[:, :, 0], REVIEW_RATIO)[subject] - \
+                                estimate_skills(previous_scores, REVIEW_RATIO)[subject]
+        mean_type_gain = self._get_mean_type_gain(subject, difficulty, estimated_improvement)
+        for d in range(self.difficulties_levels):
+            self.last_scores[subject, d, -self.learning_type_number:] = mean_type_gain
         self.last_scores[subject, difficulty, 2:2 + self.learning_type_number] = 0
         self.last_action['test_score'] = self.last_scores[subject, difficulty, 0]
         if not self.cumulative_train_time[subject]:
@@ -110,24 +117,26 @@ class StudentEnv(gym.Env):
                 return REWARD_FOR_ACHIEVING_TARGET_LEVEL * (difficulty + 1) / self.difficulties_levels
             else:
                 return PENALTY_FOR_UNNECESSARY_TEST
-        return GAIN_MULTIPLIER_FOR_TEST * ((self.last_scores[subject, difficulty, 0] - previous_score)
-                                           / self.cumulative_train_time[subject]) + TIME_PENALTY_FOR_TEST
+        return GAIN_MULTIPLIER_FOR_TEST * (1 / np.sqrt(self.step_num)) * (
+                    (self.last_scores[subject, difficulty, 0] - previous_score)
+                    / self.cumulative_train_time[subject] + TIME_PENALTY_FOR_TEST)
 
-    def _get_mean_type_gain(self, subject, difficulty):
+    def _get_mean_type_gain(self, subject, difficulty, estimated_improvement):
         num_trainings_since_last_test = self.last_scores[subject, difficulty, 2:2 + self.learning_type_number]
         if np.sum(num_trainings_since_last_test) > 0:
             ratio = num_trainings_since_last_test / np.sum(num_trainings_since_last_test)
-            new_gain = ratio * self.last_scores[subject, difficulty, 1]
+            new_gain = estimated_improvement / np.sum(num_trainings_since_last_test)
             result = -np.ones(self.learning_type_number)
-            for idx, elem in enumerate(zip(self.last_scores[subject, difficulty, -self.learning_type_number:], new_gain)):
-                last_avg, new_avg = elem
+            for idx, elem in enumerate(
+                    zip(self.last_scores[subject, difficulty, -self.learning_type_number:], ratio)):
+                last_avg, ratio = elem
                 if self.train_counter[subject, difficulty, idx] == 0:
-                    result[idx] = 0
+                    result[idx] = new_gain
                 else:
-                    result[idx] = np.average([last_avg, new_avg],
+                    result[idx] = np.average([last_avg, new_gain],
                                              weights=[self.train_counter[subject, difficulty, idx],
-                                                      num_trainings_since_last_test[idx]])
-            self.train_counter[subject, difficulty, :] += num_trainings_since_last_test
+                                                      ratio])
+            self.train_counter[subject, difficulty, :] += ratio
             return result
         else:
             return self.last_scores[subject, difficulty, -self.learning_type_number:]
@@ -168,6 +177,8 @@ class StudentEnv(gym.Env):
         estimated_penalty = self._get_not_adapted_learning_penalty(estimated_skill, learning_difficulty)
         estimated_gain = POPULATION_MEAN_SKILL_GAIN * learning_type
         adapted_learning_reward = estimated_penalty * estimated_gain * GAIN_REWARD_RATIO
+        if learning_type == np.argmax(np.sum(self.mean_skill_gains, axis=0)):
+            return PROPER_LEARNING_TYPE_REWARD
         return 0
         # return 0 - (learning_type + 1) + adapted_learning_reward
 
@@ -199,11 +210,14 @@ class StudentEnv(gym.Env):
                  for i in range(self.learning_type_number)}
         table = {'Test matrix': last_scores[:, :, 0].round(1)}
         table.update(types)
+        if self.last_action['action'] == 'test':
+            table.update({f'Train counters {i + 1}': last_scores[:, :, 2 + i].round(3)
+                          for i in range(self.learning_type_number)})
         print(f'***\n'
-              f'Action: {action_to_str}\n'+
-              tabulate(table, headers='keys')+'\n'
+              f'Action: {action_to_str}\n' +
+              tabulate(table, headers='keys') + '\n'
               f'Latent skill level: {self.skills_levels.round(1)}\n'
-              f'***')
+                                                f'***')
         logging.info(json.dumps({**self.last_action, 'skills': self.skills_levels, 'step': self.step_num,
                                  'episode': self.episode},
                                 cls=reporting.NpEncoder))
@@ -211,11 +225,29 @@ class StudentEnv(gym.Env):
 
 
 def _get_mean_skills_gains(subjects_number, learning_types_number):
-    skill_gain_matrix = np.tile(np.random.normal(POPULATION_MEAN_SKILL_GAIN, POPULATION_STD_SKILL_GAIN,
-                                                 size=(learning_types_number)), (subjects_number, 1))
-    skill_gain_matrix += np.random.normal(0, POPULATION_STD_TYPE_GAIN, size=(subjects_number, learning_types_number))
-    interval_mean_skill_gains = np.maximum(
-        skill_gain_matrix,
-        np.full(shape=(subjects_number, learning_types_number), fill_value=POPULATION_MIN_SKILL_GAIN)
-    )
+    # skill_gain_matrix = np.tile(np.random.normal(POPULATION_MEAN_SKILL_GAIN, POPULATION_STD_SKILL_GAIN,
+    #                                              size=(learning_types_number)), (subjects_number, 1))
+    # skill_gain_matrix += np.random.normal(0, POPULATION_STD_TYPE_GAIN, size=(subjects_number, learning_types_number))
+    # interval_mean_skill_gains = np.maximum(
+    #     skill_gain_matrix,
+    #     np.full(shape=(subjects_number, learning_types_number), fill_value=POPULATION_MIN_SKILL_GAIN)
+    # )
+
+    if np.random.random()>0.5:
+        excellence_skills = np.tile(
+            np.concatenate(([np.random.normal(5, 0.3)], np.random.normal(0.3, 0.1, 2))), (3, 1))
+        excellence_skills += np.random.normal(0, 0.1, size=(3, 3))
+        excellence_skills = np.maximum(
+            excellence_skills,
+            np.full(shape=(3, 3), fill_value=0.05)
+        )
+    else:
+        excellence_skills = np.tile(
+            np.concatenate((np.random.normal(0.3, 0.1, 2), [np.random.normal(5, 0.3)])), (3, 1))
+        excellence_skills += np.random.normal(0, 0.1, size=(3, 3))
+        excellence_skills = np.maximum(
+            excellence_skills,
+            np.full(shape=(3, 3), fill_value=0.05)
+        )
+    interval_mean_skill_gains = excellence_skills
     return interval_mean_skill_gains
