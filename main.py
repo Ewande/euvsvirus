@@ -87,7 +87,7 @@ def _run_episode(model, env, num_steps):
         else:
             action, _states = model.predict(obs)
         obs, rewards, done, info = env.step(action)
-        print(i)
+        # print(i)
         env.render()
         if done:
             return i

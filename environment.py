@@ -158,11 +158,11 @@ class StudentEnv(gym.Env):
 
     def render(self, mode='human'):
         action_to_str = ';'.join(f'{k}={v}' for k, v in self.last_action.items())
-        print(f'***\n'
-              f'Action: {action_to_str}\n'
-              f'Test matrix: \n{self.last_scores.round(1)}\n'
-              f'Latent skill level: {self.skills_levels.round(1)}\n'
-              f'***')
+        # print(f'***\n'
+        #       f'Action: {action_to_str}\n'
+        #       f'Test matrix: \n{self.last_scores.round(1)}\n'
+        #       f'Latent skill level: {self.skills_levels.round(1)}\n'
+        #       f'***')
         logging.info(json.dumps({**self.last_action, 'skills': self.skills_levels, 'step': self.step_num,
                                  'episode': self.episode},
                                 cls=reporting.NpEncoder))
