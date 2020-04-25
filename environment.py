@@ -8,6 +8,7 @@ import numpy as np
 import reporting
 from utils import estimate_skills
 import sys
+from tabulate import tabulate
 
 MEAN_START_SKILL_LEVEL = 20
 STD_START_SKILL_LEVEL = 10
@@ -21,7 +22,7 @@ STUDENT_SKILL_GAIN_STD = 1
 
 TEST_SCORE_STD = 4
 
-TARGET_SCORE = 90
+TARGET_SCORE = 95
 
 REVIEW_RATIO = 0.25
 
@@ -193,9 +194,14 @@ class StudentEnv(gym.Env):
 
     def render(self, mode='human'):
         action_to_str = ';'.join(f'{k}={v}' for k, v in self.last_action.items())
+        last_scores = self.last_scores
+        types = {f'Learning type number {i + 1}': last_scores[:, :, -self.learning_type_number + i].round(3)
+                 for i in range(self.learning_type_number)}
+        table = {'Test matrix': last_scores[:, :, 0].round(1)}
+        table.update(types)
         print(f'***\n'
-              f'Action: {action_to_str}\n'
-              f'Test matrix: \n{self.last_scores.round(1)}\n'
+              f'Action: {action_to_str}\n'+
+              tabulate(table, headers='keys')+'\n'
               f'Latent skill level: {self.skills_levels.round(1)}\n'
               f'***')
         logging.info(json.dumps({**self.last_action, 'skills': self.skills_levels, 'step': self.step_num,
