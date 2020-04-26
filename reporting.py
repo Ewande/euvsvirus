@@ -17,6 +17,8 @@ class NpEncoder(json.JSONEncoder):
 
 
 def setup_logging(filename=None, level=logging.INFO, mode='a'):
+    logging.getLogger('tensorflow').setLevel(logging.ERROR)
+
     logger = logging.getLogger()
     logger.setLevel(level)
 
