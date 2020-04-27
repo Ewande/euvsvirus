@@ -1,4 +1,4 @@
-# hackyeah2020 - YourTutor
+# EUvsVirus - YourTutor
 
 RL approach to optimization of teaching process with respect to individual student's capabilities.
 
