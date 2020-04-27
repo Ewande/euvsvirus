@@ -32,7 +32,7 @@ REWARD_FOR_ACHIEVING_ALL_LEVELS = 2000
 
 PENALTY_FOR_UNNECESSARY_TEST = -700
 TIME_PENALTY_FOR_TEST = - 2
-GAIN_MULTIPLIER_FOR_TEST = 11
+GAIN_MULTIPLIER_FOR_TEST = 0
 
 NOT_ADAPTED_DIFFICULTY_PENALTY = 0.25
 
@@ -70,6 +70,7 @@ class StudentEnv(gym.Env):
         )
         self.difficulties_levels = num_difficulty_levels
         self.learning_type_number = num_learning_types
+        self.num_subjects = num_subjects
         self.skills_levels = np.maximum(
             np.random.normal(MEAN_START_SKILL_LEVEL, STD_START_SKILL_LEVEL, size=num_subjects), 0
         )
@@ -121,6 +122,11 @@ class StudentEnv(gym.Env):
         mean_type_gain = self._get_mean_type_gain(subject, difficulty, estimated_improvement)
         for d in range(self.difficulties_levels):
             self.last_scores[subject, d, -self.learning_type_number:] = mean_type_gain
+            for s in range(self.num_subjects):
+                self.last_scores[s, d, -self.learning_type_number:] = \
+                    np.average([self.last_scores[s, d, -self.learning_type_number:], mean_type_gain],
+                               weights=[1, 0.5], axis=0)
+
         self.last_scores[subject, difficulty, 2:2 + self.learning_type_number] = 0
         self.last_action['test_score'] = self.last_scores[subject, difficulty, 0]
         if not self.cumulative_train_time[subject]:
@@ -131,9 +137,9 @@ class StudentEnv(gym.Env):
                 return REWARD_FOR_ACHIEVING_TARGET_LEVEL * (difficulty + 1) / self.difficulties_levels
             else:
                 return PENALTY_FOR_UNNECESSARY_TEST
-        return GAIN_MULTIPLIER_FOR_TEST * (1 / np.sqrt(self.step_num)) * (
+        return GAIN_MULTIPLIER_FOR_TEST * (1 / np.sqrt(self.step_num+1)) * (
                     (self.last_scores[subject, difficulty, 0] - previous_score)
-                    / self.cumulative_train_time[subject] + TIME_PENALTY_FOR_TEST)
+                    / self.cumulative_train_time[subject]) + TIME_PENALTY_FOR_TEST
 
     def _get_mean_type_gain(self, subject, difficulty, estimated_improvement):
         num_trainings_since_last_test = self.last_scores[subject, difficulty, 2:2 + self.learning_type_number]
@@ -150,7 +156,8 @@ class StudentEnv(gym.Env):
                     result[idx] = np.average([last_avg, new_gain],
                                              weights=[self.train_counter[subject, difficulty, idx],
                                                       ratio])
-            self.train_counter[subject, difficulty, :] += ratio
+            for d in range(self.learning_type_number):
+                self.train_counter[subject, d, :] += ratio
             return result
         else:
             return self.last_scores[subject, difficulty, -self.learning_type_number:]
@@ -169,8 +176,8 @@ class StudentEnv(gym.Env):
 
     def _get_proper_test_mean(self, subject, difficulty):
         proper_mean = self._get_scaled_mean_score(subject, difficulty)
-        review_score = self.review_ratio * 100 if difficulty else 0
-        return review_score + proper_mean
+        review_score = self.review_ratio if difficulty else 0
+        return review_score*100 + proper_mean*(1-review_score)
 
     def _get_scaled_mean_score(self, subject, difficulty):
         return (self.skills_levels[subject] - self.difficulties_thresholds[difficulty]) * self.difficulties_levels
@@ -191,8 +198,9 @@ class StudentEnv(gym.Env):
         estimated_penalty = self._get_not_adapted_learning_penalty(estimated_skill, learning_difficulty)
         estimated_gain = POPULATION_MEAN_SKILL_GAIN * learning_type
         adapted_learning_reward = estimated_penalty * estimated_gain * GAIN_REWARD_RATIO
-        if learning_type == np.argmax(np.sum(self.mean_skill_gains, axis=0)):
-            return PROPER_LEARNING_TYPE_REWARD
+        predicted_excellence = np.argmax(np.sum(self.last_scores[:,:,-self.learning_type_number:], axis=(0, 1)))
+        if learning_type == np.argmax(np.sum(self.mean_skill_gains, axis=0)) and predicted_excellence == learning_type:
+            return PROPER_LEARNING_TYPE_REWARD #* 1/np.sqrt(self.step_num+1)
         return 0
         # return 0 - (learning_type + 1) + adapted_learning_reward
 
@@ -233,7 +241,7 @@ class StudentEnv(gym.Env):
               f'Latent skill level: {self.skills_levels.round(1)}\n'
                                                 f'***')
         logging.info(json.dumps({**self.last_action, 'skills': self.skills_levels, 'step': self.step_num,
-                                 'episode': self.episode},
+                                 'episode': self.episode, 'env': 'original'},
                                 cls=reporting.NpEncoder))
         return self.last_action
 
@@ -249,19 +257,85 @@ def _get_mean_skills_gains(subjects_number, learning_types_number):
 
     if np.random.random()>0.5:
         excellence_skills = np.tile(
-            np.concatenate(([np.random.normal(5, 0.3)], np.random.normal(0.3, 0.1, 2))), (3, 1))
-        excellence_skills += np.random.normal(0, 0.1, size=(3, 3))
+            np.concatenate(([np.random.normal(3, 0.2)], np.random.normal(0.3, 0.1, 2))), (3, 1))
+        excellence_skills += np.random.normal(0, 0.05, size=(3, 3))
         excellence_skills = np.maximum(
             excellence_skills,
             np.full(shape=(3, 3), fill_value=0.05)
         )
     else:
         excellence_skills = np.tile(
-            np.concatenate((np.random.normal(0.3, 0.1, 2), [np.random.normal(5, 0.3)])), (3, 1))
-        excellence_skills += np.random.normal(0, 0.1, size=(3, 3))
+            np.concatenate((np.random.normal(0.2, 0.1, 2), [np.random.normal(3, 0.2)])), (3, 1))
+        excellence_skills += np.random.normal(0, 0.05, size=(3, 3))
         excellence_skills = np.maximum(
             excellence_skills,
             np.full(shape=(3, 3), fill_value=0.05)
         )
     interval_mean_skill_gains = excellence_skills
     return interval_mean_skill_gains
+
+
+class StudentEnvBypass(StudentEnv):
+    def __init__(self, studentenvcopy, prob_ratio=None):
+        num_subjects, num_difficulty_levels, num_learning_types = studentenvcopy.num_subjects, \
+                                                                  studentenvcopy.difficulties_levels, \
+                                                                  studentenvcopy.learning_type_number
+        super(StudentEnvBypass, self).__init__(num_subjects, num_difficulty_levels, num_learning_types)
+        self.last_scores = copy.deepcopy(studentenvcopy.last_scores)
+        self.cumulative_train_time = copy.deepcopy(studentenvcopy.cumulative_train_time)
+        self.train_counter = copy.deepcopy(studentenvcopy.train_counter)
+        self.episode = copy.deepcopy(studentenvcopy.episode)
+        self.step_num = copy.deepcopy(studentenvcopy.step_num)
+        self.prob_ratio = prob_ratio if prob_ratio else [0.8, 0.1, 0.1]
+        self.mean_skill_gains = copy.deepcopy(studentenvcopy.mean_skill_gains)
+        self.skills_levels = copy.deepcopy(studentenvcopy.skills_levels)
+
+    def step(self, action):
+        assert self.action_space.contains(action)
+        is_test, subject, test_difficulty, learning_types, learning_difficulty = action
+        difficulty_to_log = test_difficulty if is_test else learning_difficulty
+        self.last_action = {
+            'action': ['train', 'test'][is_test],
+            'subject': subject + 1,
+            'difficulty': difficulty_to_log + 1
+        }
+
+        if is_test:
+            reward = self._test(subject, test_difficulty)
+            self.cumulative_train_time[subject] = 0
+            if (self.last_scores[:, -1, 0] > TARGET_SCORE).all():
+                is_done = 1
+                reward += REWARD_FOR_ACHIEVING_ALL_LEVELS
+            else:
+                is_done = 0
+        else:
+            learning_types = int(np.random.choice(self.difficulties_levels, p=self.prob_ratio))
+            reward = self._train(subject, learning_types, learning_difficulty)
+            is_done = 0
+        reward += - np.sqrt(self.step_num)
+        self.last_action['reward'] = reward
+        self.step_num += 1
+        return self.last_scores, reward, is_done, {}
+
+    def render(self, mode='human'):
+        action_to_str = ';'.join(f'{k}={v}' for k, v in self.last_action.items())
+        last_scores = self.last_scores
+        types = {f'Learning type number {i + 1}': last_scores[:, :, -self.learning_type_number + i].round(3)
+                 for i in range(self.learning_type_number)}
+        table = {'Test matrix': last_scores[:, :, 0].round(1)}
+        table.update(types)
+        if self.last_action['action'] == 'test':
+            table.update({f'Train counters {i + 1}': last_scores[:, :, 2 + i].round(3)
+                          for i in range(self.learning_type_number)})
+        print(f'***\n'
+              f'Action: {action_to_str}\n' +
+              tabulate(table, headers='keys') + '\n'
+              f'Latent skill level: {self.skills_levels.round(1)}\n'
+                                                f'***')
+        logging.info(json.dumps({**self.last_action, 'skills': self.skills_levels, 'step': self.step_num,
+                                 'episode': self.episode,
+                                 'env': f'bias for {np.argmax(self.prob_ratio)+1} learning type'},
+                                cls=reporting.NpEncoder))
+        return self.last_action
+
+
