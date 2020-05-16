@@ -98,6 +98,9 @@ class StudentEnv(gym.Env):
                  for i in range(self.num_train_types)}
         table = {'Test matrix': last_scores[:, :, 0].round(1)}
         table.update(types)
+        if self.last_action['action'] == 'test':
+            table.update({f'Train counters {i + 1}': last_scores[:, :, 2 + i].round(3)
+                          for i in range(self.num_train_types)})
         print(f'***\n'
               f'Action: {action_to_str}\n'
               f'{tabulate(table, headers="keys")}\n'
