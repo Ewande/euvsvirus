@@ -273,7 +273,7 @@ class StudentEnvBypass(StudentEnv):
         return super().step(action)
 
     def _get_dict_to_log(self):
-        parent_dict = self._get_dict_to_log()
+        parent_dict = super()._get_dict_to_log()
         parent_dict['env'] = f'bias for {np.argmax(self.prob_ratio) + 1} training type'
         return parent_dict
 
