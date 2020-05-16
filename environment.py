@@ -14,14 +14,14 @@ from tabulate import tabulate
 MEAN_START_SKILL_LEVEL = 20
 STD_START_SKILL_LEVEL = 10
 
-POPULATION_MEAN_SKILL_GAIN = 3
-POPULATION_STD_SKILL_GAIN = 2
-POPULATION_STD_TYPE_GAIN = 0.2
-POPULATION_MIN_SKILL_GAIN = 0.2
+POPULATION_MEAN_SKILL_GAIN = 2
+POPULATION_STD_SKILL_GAIN = 1.8
+POPULATION_STD_TYPE_GAIN = 0.01
+POPULATION_MIN_SKILL_GAIN = 0.1
 
-STUDENT_SKILL_GAIN_STD = 1
+STUDENT_SKILL_GAIN_STD = 0.2
 
-TEST_SCORE_STD = 4
+TEST_SCORE_STD = 0.5
 
 TARGET_SCORE = 95
 
@@ -30,8 +30,8 @@ REVIEW_RATIO = 0.25
 REWARD_FOR_ACHIEVING_TARGET_LEVEL = 100
 REWARD_FOR_ACHIEVING_ALL_LEVELS = 1000
 
-PENALTY_FOR_UNNECESSARY_TEST = -500
-TIME_PENALTY_FOR_TEST = - 5
+PENALTY_FOR_UNNECESSARY_TEST = -700
+TIME_PENALTY_FOR_TEST = - 2
 GAIN_MULTIPLIER_FOR_TEST = 0
 
 NOT_ADAPTED_DIFFICULTY_PENALTY = 0.25
@@ -238,3 +238,69 @@ class StudentEnv(gym.Env):
 
     def _get_proper_difficulty(self, skill):
         return sum(self.difficulty_thresholds <= skill) - 1
+
+
+class StudentEnvBypass(StudentEnv):
+    def __init__(self, studentenvcopy, prob_ratio=None):
+        num_subjects, num_difficulty_levels, num_learning_types = studentenvcopy.num_subjects, \
+                                                                  studentenvcopy.difficulties_levels, \
+                                                                  studentenvcopy.learning_type_number
+        super(StudentEnvBypass, self).__init__(num_subjects, num_difficulty_levels, num_learning_types)
+        self.last_scores = copy.deepcopy(studentenvcopy.last_scores)
+        self.cumulative_train_time = copy.deepcopy(studentenvcopy.cumulative_train_time)
+        self.train_counter = copy.deepcopy(studentenvcopy.train_counter)
+        self.episode = copy.deepcopy(studentenvcopy.episode)
+        self.step_num = copy.deepcopy(studentenvcopy.step_num)
+        self.prob_ratio = prob_ratio if prob_ratio else [0.8, 0.1, 0.1]
+        self.mean_skill_gains = copy.deepcopy(studentenvcopy.mean_skill_gains)
+        self.skills_levels = copy.deepcopy(studentenvcopy.skills_levels)
+
+    def step(self, action):
+        assert self.action_space.contains(action)
+        is_test, subject, test_difficulty, learning_types, learning_difficulty = action
+        difficulty_to_log = test_difficulty if is_test else learning_difficulty
+        self.last_action = {
+            'action': ['train', 'test'][is_test],
+            'subject': subject + 1,
+            'difficulty': difficulty_to_log + 1
+        }
+
+        if is_test:
+            reward = self._test(subject, test_difficulty)
+            self.cumulative_train_time[subject] = 0
+            if (self.last_scores[:, -1, 0] > TARGET_SCORE).all():
+                is_done = 1
+                reward += REWARD_FOR_ACHIEVING_ALL_LEVELS
+            else:
+                is_done = 0
+        else:
+            learning_types = int(np.random.choice(self.difficulties_levels, p=self.prob_ratio))
+            reward = self._train(subject, learning_types, learning_difficulty)
+            is_done = 0
+        reward += - np.sqrt(self.step_num)
+        self.last_action['reward'] = reward
+        self.step_num += 1
+        return self.last_scores, reward, is_done, {}
+
+    def render(self, mode='human'):
+        action_to_str = ';'.join(f'{k}={v}' for k, v in self.last_action.items())
+        last_scores = self.last_scores
+        types = {f'Learning type number {i + 1}': last_scores[:, :, -self.learning_type_number + i].round(3)
+                 for i in range(self.learning_type_number)}
+        table = {'Test matrix': last_scores[:, :, 0].round(1)}
+        table.update(types)
+        if self.last_action['action'] == 'test':
+            table.update({f'Train counters {i + 1}': last_scores[:, :, 2 + i].round(3)
+                          for i in range(self.learning_type_number)})
+        print(f'***\n'
+              f'Action: {action_to_str}\n' +
+              tabulate(table, headers='keys') + '\n'
+              f'Latent skill level: {self.skills_levels.round(1)}\n'
+                                                f'***')
+        logging.info(json.dumps({**self.last_action, 'skills': self.skills_levels, 'step': self.step_num,
+                                 'episode': self.episode,
+                                 'env': f'bias for {np.argmax(self.prob_ratio)+1} learning type'},
+                                cls=reporting.NpEncoder))
+        return self.last_action
+
+
