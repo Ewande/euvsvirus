@@ -103,9 +103,7 @@ class StudentEnv(gym.Env):
               f'{tabulate(table, headers="keys")}\n'
               f'Latent skill level: {self.skill_levels.round(1)}\n'
               f'***')
-        logging.info(json.dumps({**self.last_action, 'skills': self.skill_levels, 'step': self.step_num,
-                                 'episode': self.episode},
-                                cls=reporting.NpEncoder))
+        logging.info(json.dumps(self._get_dict_to_log(), cls=reporting.NpEncoder))
         return self.last_action
 
     def reset(self):
@@ -151,6 +149,15 @@ class StudentEnv(gym.Env):
         self.last_action['reward'] = reward
         self.step_num += 1
         return self.state, reward, is_done, {}
+
+    def _get_dict_to_log(self):
+        return {
+            **self.last_action,
+            'skills': self.skill_levels,
+            'step': self.step_num,
+            'episode': self.episode,
+            'env': 'standard'
+        }
 
     def _sample_mean_skills_gains(self):
         skill_gain_matrix = np.tile(np.random.normal(POPULATION_MEAN_SKILL_GAIN, POPULATION_STD_SKILL_GAIN,
@@ -242,66 +249,29 @@ class StudentEnv(gym.Env):
 
 
 class StudentEnvBypass(StudentEnv):
-    def __init__(self, studentenvcopy, prob_ratio=None):
-        num_subjects, num_difficulty_levels, num_learning_types = studentenvcopy.num_subjects, \
-                                                                  studentenvcopy.difficulties_levels, \
-                                                                  studentenvcopy.learning_type_number
-        super(StudentEnvBypass, self).__init__(num_subjects, num_difficulty_levels, num_learning_types)
-        self.last_scores = copy.deepcopy(studentenvcopy.last_scores)
-        self.cumulative_train_time = copy.deepcopy(studentenvcopy.cumulative_train_time)
-        self.train_counter = copy.deepcopy(studentenvcopy.train_counter)
-        self.episode = copy.deepcopy(studentenvcopy.episode)
-        self.step_num = copy.deepcopy(studentenvcopy.step_num)
-        self.prob_ratio = prob_ratio if prob_ratio else [0.8, 0.1, 0.1]
-        self.mean_skill_gains = copy.deepcopy(studentenvcopy.mean_skill_gains)
-        self.skills_levels = copy.deepcopy(studentenvcopy.skills_levels)
+    def __init__(self, env: StudentEnv, prob_ratio):
+        super(StudentEnvBypass, self).__init__(env.num_subjects, env.num_difficulty_levels, env.num_train_types)
+
+        # deep-copy all
+        self.skills_levels = copy.deepcopy(env.skill_levels)
+        self.state = copy.deepcopy(env.state)
+        self.cum_train_time = copy.deepcopy(env.cum_train_time)
+        self.train_counter = copy.deepcopy(env.train_counter)
+        self.mean_skill_gains = copy.deepcopy(env.mean_skill_gains)
+        self.step_num = copy.deepcopy(env.step_num)
+        self.episode = copy.deepcopy(env.episode)
+        self.last_action = copy.deepcopy(env.last_action)
+
+        self.prob_ratio = prob_ratio
 
     def step(self, action):
-        assert self.action_space.contains(action)
-        is_test, subject, test_difficulty, learning_types, learning_difficulty = action
-        difficulty_to_log = test_difficulty if is_test else learning_difficulty
-        self.last_action = {
-            'action': ['train', 'test'][is_test],
-            'subject': subject + 1,
-            'difficulty': difficulty_to_log + 1
-        }
+        forced_train_type = int(np.random.choice(self.num_train_types, p=self.prob_ratio))
+        action[3] = forced_train_type
+        return super().step(action)
 
-        if is_test:
-            reward = self._test(subject, test_difficulty)
-            self.cumulative_train_time[subject] = 0
-            if (self.last_scores[:, -1, 0] > TARGET_SCORE).all():
-                is_done = 1
-                reward += REWARD_FOR_ACHIEVING_ALL_LEVELS
-            else:
-                is_done = 0
-        else:
-            learning_types = int(np.random.choice(self.difficulties_levels, p=self.prob_ratio))
-            reward = self._train(subject, learning_types, learning_difficulty)
-            is_done = 0
-        reward += - np.sqrt(self.step_num)
-        self.last_action['reward'] = reward
-        self.step_num += 1
-        return self.last_scores, reward, is_done, {}
-
-    def render(self, mode='human'):
-        action_to_str = ';'.join(f'{k}={v}' for k, v in self.last_action.items())
-        last_scores = self.last_scores
-        types = {f'Learning type number {i + 1}': last_scores[:, :, -self.learning_type_number + i].round(3)
-                 for i in range(self.learning_type_number)}
-        table = {'Test matrix': last_scores[:, :, 0].round(1)}
-        table.update(types)
-        if self.last_action['action'] == 'test':
-            table.update({f'Train counters {i + 1}': last_scores[:, :, 2 + i].round(3)
-                          for i in range(self.learning_type_number)})
-        print(f'***\n'
-              f'Action: {action_to_str}\n' +
-              tabulate(table, headers='keys') + '\n'
-              f'Latent skill level: {self.skills_levels.round(1)}\n'
-                                                f'***')
-        logging.info(json.dumps({**self.last_action, 'skills': self.skills_levels, 'step': self.step_num,
-                                 'episode': self.episode,
-                                 'env': f'bias for {np.argmax(self.prob_ratio)+1} learning type'},
-                                cls=reporting.NpEncoder))
-        return self.last_action
+    def _get_dict_to_log(self):
+        parent_dict = self._get_dict_to_log()
+        parent_dict['env'] = f'bias for {np.argmax(self.prob_ratio) + 1} training type'
+        return parent_dict
 
 
