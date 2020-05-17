@@ -1,16 +1,17 @@
 import copy
 import json
 import logging
+import sys
 
 import gym
 from gym import spaces
 import numpy as np
+from tabulate import tabulate
 
 import reporting
+import settings
 from utils import estimate_skills
-import sys
-from tabulate import tabulate
-from Settings import *
+
 
 class StudentEnv(gym.Env):
     def __init__(self, num_subjects=3, num_difficulty_levels=3, num_train_types=3):
@@ -83,7 +84,7 @@ class StudentEnv(gym.Env):
 
     def reset(self):
         self.skill_levels = np.maximum(
-            np.random.normal(MEAN_START_SKILL_LEVEL, STD_START_SKILL_LEVEL, size=self.num_subjects), 0
+            np.random.normal(settings.MEAN_START_SKILL_LEVEL, settings.STD_START_SKILL_LEVEL, size=self.num_subjects), 0
         )
         self.state = np.zeros(shape=(
             self.num_subjects,
@@ -110,14 +111,14 @@ class StudentEnv(gym.Env):
             'difficulty': (test_difficulty if is_test else train_difficulty) + 1
         }
 
-        reward = TIME_PENALTY
+        reward = settings.TIME_PENALTY
         is_done = False
         if is_test:
             reward += self._test(subject, test_difficulty)
             self.cum_train_time[subject] = 0
-            if (self.state[:, -1, 0] > TARGET_SCORE).all():
+            if (self.state[:, -1, 0] > settings.TARGET_SCORE).all():
                 is_done = True
-                reward += REWARD_FOR_ACHIEVING_ALL_LEVELS
+                reward += settings.REWARD_FOR_ACHIEVING_ALL_LEVELS
         else:
             reward += self._train(subject, train_type, train_difficulty)
 
@@ -135,37 +136,38 @@ class StudentEnv(gym.Env):
         }
 
     def _sample_mean_skills_gains(self):
-        skill_gain_matrix = np.tile(np.random.normal(POPULATION_MEAN_SKILL_GAIN, POPULATION_STD_SKILL_GAIN,
+        skill_gain_matrix = np.tile(np.random.normal(settings.POPULATION_MEAN_SKILL_GAIN,
+                                                     settings.POPULATION_STD_SKILL_GAIN,
                                                      size=self.num_train_types), (self.num_subjects, 1))
-        skill_gain_matrix += np.random.normal(0, POPULATION_STD_TYPE_GAIN,
+        skill_gain_matrix += np.random.normal(0, settings.POPULATION_STD_TYPE_GAIN,
                                               size=(self.num_subjects, self.num_train_types))
-        return np.maximum(skill_gain_matrix, POPULATION_MIN_SKILL_GAIN)
+        return np.maximum(skill_gain_matrix, settings.POPULATION_MIN_SKILL_GAIN)
 
     def _test(self, subject, difficulty):
         test_mean = self._get_test_mean(subject, difficulty)
         prev_test_score = self.state[subject, difficulty, 0]
         prev_test_scores = copy.copy(self.state[:, :, 0])
 
-        new_test_score = min(max(np.random.normal(test_mean, TEST_SCORE_STD), 0), 100)
+        new_test_score = min(max(np.random.normal(test_mean, settings.TEST_SCORE_STD), 0), 100)
         self.last_action['test_score'] = new_test_score
 
         self.state[subject, difficulty, 0] = new_test_score
         self.state[subject, difficulty, 1] = new_test_score - prev_test_score
 
-        estimated_gain = estimate_skills(self.state[:, :, 0], REVIEW_RATIO)[subject] - \
-                                estimate_skills(prev_test_scores, REVIEW_RATIO)[subject]
+        estimated_gain = estimate_skills(self.state[:, :, 0], settings.REVIEW_RATIO)[subject] - \
+            estimate_skills(prev_test_scores, settings.REVIEW_RATIO)[subject]
 
         self.state[subject, difficulty, -self.num_train_types:] = self._get_mean_type_gain(subject, difficulty, estimated_gain)
         self.state[subject, difficulty, 2:2 + self.num_train_types] = 0
 
-        reward = TIME_PENALTY_FOR_TEST
+        reward = settings.TIME_PENALTY_FOR_TEST
         if self.cum_train_time[subject] > 0:
-            reward += GAIN_MULTIPLIER_FOR_TEST * (self.state[subject, difficulty, 1] / self.cum_train_time[subject])
-        if new_test_score >= TARGET_SCORE:
-            if prev_test_score < TARGET_SCORE:
-                reward += REWARD_FOR_ACHIEVING_TARGET_LEVEL * (difficulty + 1) / self.num_difficulty_levels
+            reward += settings.GAIN_MULTIPLIER_FOR_TEST * (self.state[subject, difficulty, 1] / self.cum_train_time[subject])
+        if new_test_score >= settings.TARGET_SCORE:
+            if prev_test_score < settings.TARGET_SCORE:
+                reward += settings.REWARD_FOR_ACHIEVING_TARGET_LEVEL * (difficulty + 1) / self.num_difficulty_levels
             else:
-                reward += PENALTY_FOR_UNNECESSARY_TEST
+                reward += settings.PENALTY_FOR_UNNECESSARY_TEST
         return reward
 
     def _get_mean_type_gain(self, subject, difficulty, gain):
@@ -200,7 +202,7 @@ class StudentEnv(gym.Env):
 
     def _train(self, subject, train_type, train_difficulty):
         mean_gain = self.mean_skill_gains[subject, train_type]
-        gain = np.random.normal(mean_gain, STUDENT_SKILL_GAIN_STD)
+        gain = np.random.normal(mean_gain, settings.STUDENT_SKILL_GAIN_STD)
         adjusted_gain = max(0, gain * self._get_not_adapted_train_penalty(self.skill_levels[subject], train_difficulty))
 
         self.skill_levels[subject] = min(self.skill_levels[subject] + adjusted_gain, 100)
@@ -217,7 +219,7 @@ class StudentEnv(gym.Env):
 
     def _get_not_adapted_train_penalty(self, skill, train_difficulty):
         proper_difficulty = self._get_proper_difficulty(skill)
-        return NOT_ADAPTED_DIFFICULTY_PENALTY ** abs(train_difficulty - proper_difficulty)
+        return settings.NOT_ADAPTED_DIFFICULTY_PENALTY ** abs(train_difficulty - proper_difficulty)
 
     def _get_proper_difficulty(self, skill):
         return sum(self.difficulty_thresholds <= skill) - 1
