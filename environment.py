@@ -89,7 +89,9 @@ class StudentEnv(gym.Env):
         self.state = np.zeros(shape=(
             self.num_subjects,
             self.num_difficulty_levels,
-            2 * self.num_train_types + 2
+            2 * self.num_train_types + 2  # last test score, last test improvement,
+                                          # number of learning units for each type,
+                                          # estimated mean gains for each type
         ))
         self.mean_skill_gains = self._sample_mean_skills_gains()
         self.cum_train_time = np.zeros(self.num_subjects)
