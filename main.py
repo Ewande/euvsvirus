@@ -43,7 +43,7 @@ def train(model_type, output_path, num_subjects, num_difficulty_levels, num_lear
 
 
 @cli.command()
-@click.argument('model-path', type=click.Path(exists=True))
+@click.argument('model-path', type=click.Path())
 @click.option('--num-episodes', '-e', default=200)
 @click.option('--num-steps', '-s', default=20000)
 @click.option('--logging-path')
