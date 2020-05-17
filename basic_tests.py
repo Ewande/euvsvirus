@@ -4,7 +4,7 @@ import numpy as np
 import os
 
 from environment import StudentEnv
-from environment import TARGET_SCORE
+from Settings import TARGET_SCORE
 
 
 class TestStudentEnv(unittest.TestCase):
