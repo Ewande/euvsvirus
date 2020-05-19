@@ -13,6 +13,30 @@ import settings
 from utils import estimate_skills
 
 
+class State:
+    def __init__(self, num_subjects, num_difficulty_levels, num_train_types):
+        self.last_test_scores = np.zeros(shape=(
+            num_subjects, num_difficulty_levels)
+        )
+        self.last_test_improvements = np.zeros(shape=(
+            num_subjects, num_difficulty_levels)
+        )
+        self.trainings_by_type_counter = np.zeros(shape=(
+            num_subjects, num_difficulty_levels, num_train_types
+        ))
+        self.estimated_gains = np.zeros(shape=(
+            num_subjects, num_difficulty_levels, num_train_types
+        ))
+
+    def to_np_array(self):
+        return np.concatenate([
+            np.expand_dims(self.last_test_scores, axis=2),
+            np.expand_dims(self.last_test_improvements, axis=2),
+            self.trainings_by_type_counter,
+            self.estimated_gains
+        ], axis=-1)
+
+
 class StudentEnv(gym.Env):
     def __init__(self, num_subjects=3, num_difficulty_levels=3, num_train_types=3):
         super(StudentEnv).__init__()
@@ -66,14 +90,15 @@ class StudentEnv(gym.Env):
 
     def render(self, mode='human'):
         action_to_str = ';'.join(f'{k}={v}' for k, v in self.last_action.items())
-        last_scores = self.state
-        types = {f'Training type number {i + 1}': last_scores[:, :, -self.num_train_types + i].round(3)
+        types = {f'Training type number {i + 1}': self.state.estimated_gains[:, :, i].round(3)
                  for i in range(self.num_train_types)}
-        table = {'Test matrix': last_scores[:, :, 0].round(1)}
+        table = {'Test matrix': self.state.last_test_scores.round(1)}
         table.update(types)
         if self.last_action['action'] == 'test':
-            table.update({f'Train counters {i + 1}': last_scores[:, :, 2 + i].round(3)
-                          for i in range(self.num_train_types)})
+            table.update({
+                f'Train counters {i + 1}': self.state.trainings_by_type_counter[:, :, i].round(3)
+                for i in range(self.num_train_types)
+            })
         print(f'***\n'
               f'Action: {action_to_str}\n'
               f'{tabulate(table, headers="keys")}\n'
@@ -86,13 +111,9 @@ class StudentEnv(gym.Env):
         self.skill_levels = np.maximum(
             np.random.normal(settings.MEAN_START_SKILL_LEVEL, settings.STD_START_SKILL_LEVEL, size=self.num_subjects), 0
         )
-        self.state = np.zeros(shape=(
-            self.num_subjects,
-            self.num_difficulty_levels,
-            2 * self.num_train_types + 2  # last test score, last test improvement,
-                                          # number of learning units for each type,
-                                          # estimated mean gains for each type
-        ))
+        self.state = State(self.num_subjects,
+                           self.num_difficulty_levels,
+                           self.num_train_types)
         self.mean_skill_gains = self._sample_mean_skills_gains()
         self.cum_train_time = np.zeros(self.num_subjects)
         self.train_counter = np.zeros((self.num_subjects, self.num_difficulty_levels, self.num_train_types))
@@ -101,7 +122,7 @@ class StudentEnv(gym.Env):
 
         self.episode += 1
         self.step_num = 0
-        return self.state
+        return self.state.to_np_array()
 
     def step(self, action):
         assert self.action_space.contains(action)
@@ -118,7 +139,7 @@ class StudentEnv(gym.Env):
         if is_test:
             reward += self._test(subject, test_difficulty)
             self.cum_train_time[subject] = 0
-            if (self.state[:, -1, 0] > settings.TARGET_SCORE).all():
+            if self._is_learning_done():
                 is_done = True
                 reward += settings.REWARD_FOR_ACHIEVING_ALL_LEVELS
         else:
@@ -126,7 +147,11 @@ class StudentEnv(gym.Env):
 
         self.last_action['reward'] = reward
         self.step_num += 1
-        return self.state, reward, is_done, {}
+        return self.state.to_np_array(), reward, is_done, {}
+
+    def _is_learning_done(self):
+        highest_difficulty_scores = self.state.last_test_scores[:, -1]
+        return (highest_difficulty_scores > settings.TARGET_SCORE).all()
 
     def _get_dict_to_log(self):
         return {
@@ -147,24 +172,25 @@ class StudentEnv(gym.Env):
 
     def _test(self, subject, difficulty):
         test_mean = self._get_test_mean(subject, difficulty)
-        prev_test_score = self.state[subject, difficulty, 0]
-        prev_test_scores = copy.copy(self.state[:, :, 0])
+        prev_test_score = self.state.last_test_scores[subject, difficulty]
+        prev_test_scores = copy.copy(self.state.last_test_scores)
 
         new_test_score = min(max(np.random.normal(test_mean, settings.TEST_SCORE_STD), 0), 100)
         self.last_action['test_score'] = new_test_score
 
-        self.state[subject, difficulty, 0] = new_test_score
-        self.state[subject, difficulty, 1] = new_test_score - prev_test_score
+        self.state.last_test_scores[subject, difficulty] = new_test_score
+        self.state.last_test_improvements[subject, difficulty] = new_test_score - prev_test_score
 
-        estimated_gain = estimate_skills(self.state[:, :, 0], settings.REVIEW_RATIO)[subject] - \
+        estimated_gain = estimate_skills(self.state.last_test_scores, settings.REVIEW_RATIO)[subject] - \
             estimate_skills(prev_test_scores, settings.REVIEW_RATIO)[subject]
 
-        self.state[subject, difficulty, -self.num_train_types:] = self._get_mean_type_gain(subject, difficulty, estimated_gain)
-        self.state[subject, difficulty, 2:2 + self.num_train_types] = 0
+        self.state.estimated_gains[subject, difficulty] = self._get_mean_type_gain(subject, difficulty, estimated_gain)
+        self.state.trainings_by_type_counter[subject, difficulty] = 0
 
         reward = settings.TIME_PENALTY_FOR_TEST
         if self.cum_train_time[subject] > 0:
-            reward += settings.GAIN_MULTIPLIER_FOR_TEST * (self.state[subject, difficulty, 1] / self.cum_train_time[subject])
+            relative_improvement = self.state.last_test_improvements[subject, difficulty] / self.cum_train_time[subject]
+            reward += settings.GAIN_MULTIPLIER_FOR_TEST * relative_improvement
         if new_test_score >= settings.TARGET_SCORE:
             if prev_test_score < settings.TARGET_SCORE:
                 reward += settings.REWARD_FOR_ACHIEVING_TARGET_LEVEL * (difficulty + 1) / self.num_difficulty_levels
@@ -173,11 +199,11 @@ class StudentEnv(gym.Env):
         return reward
 
     def _get_mean_type_gain(self, subject, difficulty, gain):
-        num_trainings_since_last_test = self.state[subject, difficulty, 2:2 + self.num_train_types]
+        num_trainings_since_last_test = self.state.trainings_by_type_counter[subject, difficulty]
         if np.sum(num_trainings_since_last_test) > 0:
             relative_gain = gain / np.sum(num_trainings_since_last_test)
             result = np.zeros(self.num_train_types)
-            for i, last_avg in enumerate(self.state[subject, difficulty, -self.num_train_types:]):
+            for i, last_avg in enumerate(self.state.estimated_gains[subject, difficulty]):
                 if self.train_counter[subject, difficulty, i] > 0:
                     result[i] = np.average([last_avg, relative_gain], weights=[
                         self.train_counter[subject, difficulty, i], num_trainings_since_last_test[i]
@@ -185,7 +211,7 @@ class StudentEnv(gym.Env):
             self.train_counter[subject, difficulty, :] += num_trainings_since_last_test
             return result
         else:
-            return self.state[subject, difficulty, -self.num_train_types:]
+            return self.state.estimated_gains[subject, difficulty]
 
     def _get_test_mean(self, subject, difficulty):
         proper_difficulty = self._get_proper_difficulty(self.skill_levels[subject])
@@ -211,7 +237,7 @@ class StudentEnv(gym.Env):
         self.last_action['improvement'] = adjusted_gain
         self.last_action['training_type'] = train_type + 1
         self.cum_train_time[subject] += 1
-        self.state[subject, train_difficulty, 2 + train_type] += 1
+        self.state.trainings_by_type_counter[subject, train_difficulty, train_type] += 1
         # estimated_skill = estimate_skills(self.state[:, :, 0], REVIEW_RATIO)[subject]
         # estimated_penalty = self._get_not_adapted_train_penalty(estimated_skill, train_difficulty)
         # estimated_gain = POPULATION_MEAN_SKILL_GAIN * train_type
