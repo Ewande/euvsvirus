@@ -59,16 +59,16 @@ class StudentEnv(gym.Env):
             num_difficulty_levels  # train difficulty level (not used if action=test)
         ])
         low_bound_observation_space_vector = np.concatenate([
-            *np.repeat(100, num_subjects*num_difficulty_levels),    # min test score
-            *np.repeat(-100, num_subjects*num_difficulty_levels),   # main difference between previous test score and current test score (later called gain)
-            *np.repeat(sys.maxsize, num_subjects*num_train_types),  # min number of trainings since last test for each training type
-            *np.repeat(100, num_train_types)],                      # min gain attributed to each training type
+            np.repeat(100, num_subjects*num_difficulty_levels),    # min test score
+            np.repeat(-100, num_subjects*num_difficulty_levels),   # main difference between previous test score and current test score (later called gain)
+            np.repeat(sys.maxsize, num_subjects*num_train_types),  # min number of trainings since last test for each training type
+            np.repeat(100, num_train_types)],                      # min gain attributed to each training type
             axis=-1)
         high_bound_observation_space_vector = np.concatenate([
-            *np.repeat(100, num_subjects*num_difficulty_levels),    # max test score
-            *np.repeat(100, num_subjects*num_difficulty_levels),    # max difference between previous test score and current test score (later called gain)
-            *np.repeat(sys.maxsize, num_subjects*num_train_types),  # max number of trainings since last test for each training type
-            *np.repeat(100, num_train_types)],                      # max gain attributed to each training type
+            np.repeat(100, num_subjects*num_difficulty_levels),    # max test score
+            np.repeat(100, num_subjects*num_difficulty_levels),    # max difference between previous test score and current test score (later called gain)
+            np.repeat(sys.maxsize, num_subjects*num_train_types),  # max number of trainings since last test for each training type
+            np.repeat(100, num_train_types)],                      # max gain attributed to each training type
             axis=-1)
         self.observation_space = spaces.Box(
             low=low_bound_observation_space_vector,
@@ -116,7 +116,7 @@ class StudentEnv(gym.Env):
                            self.num_train_types)
         self.mean_skill_gains = self._sample_mean_skills_gains()
         self.cum_train_time = np.zeros(self.num_subjects)
-        self.train_counter = np.zeros((self.num_subjects, self.num_difficulty_levels, self.num_train_types))
+        self.train_counter = np.zeros((self.num_subjects, self.num_train_types))
 
         self.last_action = None
 
@@ -184,8 +184,8 @@ class StudentEnv(gym.Env):
         estimated_gain = estimate_skills(self.state.last_test_scores, settings.REVIEW_RATIO)[subject] - \
             estimate_skills(prev_test_scores, settings.REVIEW_RATIO)[subject]
 
-        self.state.estimated_gains[subject, difficulty] = self._get_mean_type_gain(subject, difficulty, estimated_gain)
-        self.state.trainings_by_type_counter[subject, difficulty] = 0
+        self.state.estimated_gains = self._get_mean_type_gain(subject, difficulty, estimated_gain)
+        self.state.trainings_by_type_counter[subject] = 0
 
         reward = settings.TIME_PENALTY_FOR_TEST
         if self.cum_train_time[subject] > 0:
@@ -199,19 +199,19 @@ class StudentEnv(gym.Env):
         return reward
 
     def _get_mean_type_gain(self, subject, difficulty, gain):
-        num_trainings_since_last_test = self.state.trainings_by_type_counter[subject, difficulty]
+        num_trainings_since_last_test = self.state.trainings_by_type_counter[subject]
         if np.sum(num_trainings_since_last_test) > 0:
             relative_gain = gain / np.sum(num_trainings_since_last_test)
             result = np.zeros(self.num_train_types)
-            for i, last_avg in enumerate(self.state.estimated_gains[subject, difficulty]):
-                if self.train_counter[subject, difficulty, i] > 0:
+            for i, last_avg in enumerate(self.state.estimated_gains):
+                if self.train_counter[subject, i] > 0:
                     result[i] = np.average([last_avg, relative_gain], weights=[
-                        self.train_counter[subject, difficulty, i], num_trainings_since_last_test[i]
+                        self.train_counter[subject, i], num_trainings_since_last_test[i]
                     ])
-            self.train_counter[subject, difficulty, :] += num_trainings_since_last_test
+            self.train_counter[subject, :] += num_trainings_since_last_test
             return result
         else:
-            return self.state.estimated_gains[subject, difficulty]
+            return self.state.estimated_gains
 
     def _get_test_mean(self, subject, difficulty):
         proper_difficulty = self._get_proper_difficulty(self.skill_levels[subject])
@@ -237,7 +237,7 @@ class StudentEnv(gym.Env):
         self.last_action['improvement'] = adjusted_gain
         self.last_action['training_type'] = train_type + 1
         self.cum_train_time[subject] += 1
-        self.state.trainings_by_type_counter[subject, train_difficulty, train_type] += 1
+        self.state.trainings_by_type_counter[subject, train_type] += 1
         # estimated_skill = estimate_skills(self.state[:, :, 0], REVIEW_RATIO)[subject]
         # estimated_penalty = self._get_not_adapted_train_penalty(estimated_skill, train_difficulty)
         # estimated_gain = POPULATION_MEAN_SKILL_GAIN * train_type
