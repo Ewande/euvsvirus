@@ -59,10 +59,10 @@ class StudentEnv(gym.Env):
             num_difficulty_levels  # train difficulty level (not used if action=test)
         ])
         low_bound_observation_space_vector = np.concatenate([
-            np.repeat(100, num_subjects*num_difficulty_levels),    # min test score
+            np.repeat(0, num_subjects*num_difficulty_levels),    # min test score
             np.repeat(-100, num_subjects*num_difficulty_levels),   # main difference between previous test score and current test score (later called gain)
             np.repeat(sys.maxsize, num_subjects*num_train_types),  # min number of trainings since last test for each training type
-            np.repeat(100, num_train_types)],                      # min gain attributed to each training type
+            np.repeat(-100, num_train_types)],                      # min gain attributed to each training type
             axis=-1)
         high_bound_observation_space_vector = np.concatenate([
             np.repeat(100, num_subjects*num_difficulty_levels),    # max test score
@@ -90,13 +90,13 @@ class StudentEnv(gym.Env):
 
     def render(self, mode='human'):
         action_to_str = ';'.join(f'{k}={v}' for k, v in self.last_action.items())
-        types = {f'Training type number {i + 1}': self.state.estimated_gains[:, :, i].round(3)
+        types = {f'Training type number {i + 1}': np.array([self.state.estimated_gains[i].round(3)])
                  for i in range(self.num_train_types)}
         table = {'Test matrix': self.state.last_test_scores.round(1)}
         table.update(types)
         if self.last_action['action'] == 'test':
             table.update({
-                f'Train counters {i + 1}': self.state.trainings_by_type_counter[:, :, i].round(3)
+                f'Train counters {i + 1}': self.state.trainings_by_type_counter[:, i].round(3)
                 for i in range(self.num_train_types)
             })
         print(f'***\n'
