@@ -99,13 +99,13 @@ class StudentEnv(gym.Env):
 
     def render(self, mode='human'):
         action_to_str = ';'.join(f'{k}={v}' for k, v in self.last_action.items())
-        types = {f'Training type number {i + 1}': self.state.estimated_gains[:, :, i].round(3)
+        types = {f'Training type number {i + 1}': np.array([self.state.estimated_gains[i].round(3)])
                  for i in range(self.num_train_types)}
         table = {'Test matrix': self.state.last_test_scores.round(1)}
         table.update(types)
         if self.last_action['action'] == 'test':
             table.update({
-                f'Train counters {i + 1}': self.state.trainings_by_type_counter[:, :, i].round(3)
+                f'Train counters {i + 1}': self.state.trainings_by_type_counter[:, i].round(3)
                 for i in range(self.num_train_types)
             })
         print(f'***\n'
