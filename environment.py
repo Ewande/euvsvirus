@@ -28,13 +28,35 @@ class State:
             num_train_types
         ))
 
-    def to_np_array(self):
+    def reset(self):
+        self.last_test_scores = np.zeros_like(self.last_test_scores)
+        self.last_test_improvements = np.zeros_like(self.last_test_improvements)
+        self.trainings_by_type_counter = np.zeros_like(self.trainings_by_type_counter)
+        self.estimated_gains = np.zeros_like(self.estimated_gains)
+
+    def get_observation_space(self):
+        low_bound = np.concatenate([
+            np.zeros_like(self.last_test_scores),  # min test score
+            np.full_like(self.last_test_improvements, -100), # main difference between previous test score and current test score (later called gain)
+            np.zeros_like(self.trainings_by_type_counter), # min number of trainings since last test for each training type
+            np.full_like(self.estimated_gains, -100)],  # min gain attributed to each training type
+            axis=None)
+
+        high_bound = np.concatenate([
+            np.full_like(self.last_test_scores, 100),  # max test score
+            np.full_like(self.last_test_improvements, 100), # max difference between previous test score and current test score (later called gain)
+            np.full_like(self.trainings_by_type_counter, sys.maxsize), # max number of trainings since last test for each training type
+            np.full_like(self.estimated_gains, 100)],  # max gain attributed to each training type
+            axis=None)
+        return spaces.Box(low=low_bound, high=high_bound)
+
+    def get_observation(self):
         return np.concatenate([
-            self.last_test_scores.flatten(),
-            self.last_test_improvements.flatten(),
-            self.trainings_by_type_counter.flatten(),
+            self.last_test_scores,
+            self.last_test_improvements,
+            self.trainings_by_type_counter,
             self.estimated_gains
-        ], axis=-1)
+        ], axis=None)
 
 
 class StudentEnv(gym.Env):
@@ -58,28 +80,15 @@ class StudentEnv(gym.Env):
             num_train_types,  # train type (not used if action=test)
             num_difficulty_levels  # train difficulty level (not used if action=test)
         ])
-        low_bound_observation_space_vector = np.concatenate([
-            np.repeat(100, num_subjects*num_difficulty_levels),    # min test score
-            np.repeat(-100, num_subjects*num_difficulty_levels),   # main difference between previous test score and current test score (later called gain)
-            np.repeat(sys.maxsize, num_subjects*num_train_types),  # min number of trainings since last test for each training type
-            np.repeat(100, num_train_types)],                      # min gain attributed to each training type
-            axis=-1)
-        high_bound_observation_space_vector = np.concatenate([
-            np.repeat(100, num_subjects*num_difficulty_levels),    # max test score
-            np.repeat(100, num_subjects*num_difficulty_levels),    # max difference between previous test score and current test score (later called gain)
-            np.repeat(sys.maxsize, num_subjects*num_train_types),  # max number of trainings since last test for each training type
-            np.repeat(100, num_train_types)],                      # max gain attributed to each training type
-            axis=-1)
-        self.observation_space = spaces.Box(
-            low=low_bound_observation_space_vector,
-            high=high_bound_observation_space_vector
-        )
+        self.state = State(self.num_subjects, self.num_difficulty_levels, self.num_train_types)
+
+        # required by gym.Env
+        self.observation_space = self.state.get_observation_space()
 
         self.episode = -1
 
         # define all variables that are to be reset after each episode
         self.skill_levels = None  # comment
-        self.state = None  # observed state
         self.mean_skill_gains = None  # comment
         self.cum_train_time = None  # comment
         self.train_counter = None  # number of trainings of each kind since the beginning of the current episode
@@ -108,12 +117,11 @@ class StudentEnv(gym.Env):
         return self.last_action
 
     def reset(self):
+        self.state.reset()
+
         self.skill_levels = np.maximum(
             np.random.normal(settings.MEAN_START_SKILL_LEVEL, settings.STD_START_SKILL_LEVEL, size=self.num_subjects), 0
         )
-        self.state = State(self.num_subjects,
-                           self.num_difficulty_levels,
-                           self.num_train_types)
         self.mean_skill_gains = self._sample_mean_skills_gains()
         self.cum_train_time = np.zeros(self.num_subjects)
         self.train_counter = np.zeros((self.num_subjects, self.num_train_types))
@@ -122,7 +130,7 @@ class StudentEnv(gym.Env):
 
         self.episode += 1
         self.step_num = 0
-        return self.state.to_np_array()
+        return self.state.get_observation()
 
     def step(self, action):
         assert self.action_space.contains(action)
@@ -147,7 +155,7 @@ class StudentEnv(gym.Env):
 
         self.last_action['reward'] = reward
         self.step_num += 1
-        return self.state.to_np_array(), reward, is_done, {}
+        return self.state.get_observation(), reward, is_done, {}
 
     def _is_learning_done(self):
         highest_difficulty_scores = self.state.last_test_scores[:, -1]
