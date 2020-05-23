@@ -22,17 +22,17 @@ class State:
             num_subjects, num_difficulty_levels)
         )
         self.trainings_by_type_counter = np.zeros(shape=(
-            num_subjects, num_difficulty_levels, num_train_types
+            num_subjects, num_train_types
         ))
         self.estimated_gains = np.zeros(shape=(
-            num_subjects, num_difficulty_levels, num_train_types
+            num_train_types
         ))
 
     def to_np_array(self):
         return np.concatenate([
-            np.expand_dims(self.last_test_scores, axis=2),
-            np.expand_dims(self.last_test_improvements, axis=2),
-            self.trainings_by_type_counter,
+            self.last_test_scores.flatten(),
+            self.last_test_improvements.flatten(),
+            self.trainings_by_type_counter.flatten(),
             self.estimated_gains
         ], axis=-1)
 
@@ -58,21 +58,21 @@ class StudentEnv(gym.Env):
             num_train_types,  # train type (not used if action=test)
             num_difficulty_levels  # train difficulty level (not used if action=test)
         ])
-        low_bound_observation_space_vector = np.array([
-            0,  # min test score
-            -100,  # min difference between previous test score and current test score (later called gain)
-            *np.repeat(0, num_train_types),  # min number of trainings since last test for each training type
-            *np.repeat(-100, num_train_types),  # min gain attributed to each training type
-        ])
-        high_bound_observation_space_vector = np.array([
-            100,  # max test score
-            100,  # max difference between previous test score and current test score (later called gain)
-            *np.repeat(sys.maxsize, num_train_types),  # max number of trainings since last test for each training type
-            *np.repeat(100, num_train_types),  # max gain attributed to each training type
-        ])
+        low_bound_observation_space_vector = np.concatenate([
+            *np.repeat(100, num_subjects*num_difficulty_levels),    # min test score
+            *np.repeat(-100, num_subjects*num_difficulty_levels),   # main difference between previous test score and current test score (later called gain)
+            *np.repeat(sys.maxsize, num_subjects*num_train_types),  # min number of trainings since last test for each training type
+            *np.repeat(100, num_train_types)],                      # min gain attributed to each training type
+            axis=-1)
+        high_bound_observation_space_vector = np.concatenate([
+            *np.repeat(100, num_subjects*num_difficulty_levels),    # max test score
+            *np.repeat(100, num_subjects*num_difficulty_levels),    # max difference between previous test score and current test score (later called gain)
+            *np.repeat(sys.maxsize, num_subjects*num_train_types),  # max number of trainings since last test for each training type
+            *np.repeat(100, num_train_types)],                      # max gain attributed to each training type
+            axis=-1)
         self.observation_space = spaces.Box(
-            low=np.tile(low_bound_observation_space_vector, (num_subjects, num_difficulty_levels, 1)),
-            high=np.tile(high_bound_observation_space_vector, (num_subjects, num_difficulty_levels, 1))
+            low=low_bound_observation_space_vector,
+            high=high_bound_observation_space_vector
         )
 
         self.episode = -1
