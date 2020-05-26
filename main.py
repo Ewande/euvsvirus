@@ -4,7 +4,7 @@ import click
 from stable_baselines.common.policies import MlpPolicy
 from stable_baselines import TRPO, PPO2
 
-from environment import StudentEnv
+from environment import StudentEnv, StudentEnvTalented, StudentEnvBypass
 from reporting import setup_logging
 
 
@@ -13,6 +13,11 @@ SUPPORTED_MODEL_TYPES = {
     'trpo': TRPO,
 }
 
+SUPPORTED_ENV_TYPES = {
+    'StudentEnv': StudentEnv,
+    'StudentEnvTalented': StudentEnvTalented,
+    'StudentEnvBypass': StudentEnvBypass
+}
 
 @click.group()
 def cli():
@@ -26,9 +31,12 @@ def cli():
 @click.option('--num-difficulty-levels', '-d', default=3)
 @click.option('--num-learning-types', '-l', default=3)
 @click.option('--training-steps', '-t', default=250000)
-def train(model_type, output_path, num_subjects, num_difficulty_levels, num_learning_types, training_steps):
+@click.option('--env_type', '-v', type=click.Choice(list(SUPPORTED_ENV_TYPES.keys()), case_sensitive=False),
+              default='StudentEnv')
+def train(model_type, output_path, num_subjects, num_difficulty_levels, num_learning_types, training_steps, env_type):
     model_class = SUPPORTED_MODEL_TYPES[model_type]
-    env = StudentEnv(num_subjects, num_difficulty_levels, num_learning_types)
+    env_class = SUPPORTED_ENV_TYPES[env_type]
+    env = env_class(num_subjects, num_difficulty_levels, num_learning_types)
 
     model = model_class(MlpPolicy, env, verbose=1, gamma=0.9)
     model.learn(total_timesteps=training_steps)
@@ -47,14 +55,17 @@ def train(model_type, output_path, num_subjects, num_difficulty_levels, num_lear
 @click.option('--num-episodes', '-e', default=200)
 @click.option('--num-steps', '-s', default=20000)
 @click.option('--logging-path')
-def test(model_path, num_episodes, num_steps, logging_path):
+@click.option('--env_type', '-v', type=click.Choice(list(SUPPORTED_ENV_TYPES.keys()), case_sensitive=False),
+              default='StudentEnv')
+def test(model_path, num_episodes, num_steps, logging_path, env_type):
     with open(model_path + '.metadata') as outfile:
         metadata = json.load(outfile)
 
     setup_logging(logging_path or f'{model_path}.log')
 
     model = SUPPORTED_MODEL_TYPES[metadata['model_type']].load(model_path)
-    env = StudentEnv(num_subjects=metadata['num_subjects'])
+    env_class = SUPPORTED_ENV_TYPES[env_type]
+    env = env_class(num_subjects=metadata['num_subjects'])
     _run_env(model, env, num_episodes, num_steps)
 
 
@@ -63,13 +74,16 @@ def test(model_path, num_episodes, num_steps, logging_path):
 @click.option('--num-episodes', '-e', default=200)
 @click.option('--num-steps', '-s', default=20000)
 @click.option('--logging-path')
-def test_random(metadata_path, num_episodes, num_steps, logging_path):
+@click.option('--env_type', '-v', type=click.Choice(list(SUPPORTED_ENV_TYPES.keys()), case_sensitive=False),
+              default='StudentEnv')
+def test_random(metadata_path, num_episodes, num_steps, logging_path, env_type):
     with open(metadata_path) as outfile:
         metadata = json.load(outfile)
 
     setup_logging(logging_path or f'random.log')
 
-    env = StudentEnv(metadata['num_subjects'], metadata['num_difficulty_levels'], metadata['num_learning_types'])
+    env_class = SUPPORTED_ENV_TYPES[env_type]
+    env = env_class(metadata['num_subjects'], metadata['num_difficulty_levels'], metadata['num_learning_types'])
     _run_env(None, env, num_episodes, num_steps)
 
 
@@ -78,6 +92,7 @@ def _run_env(model, env, num_episodes, num_steps):
         i = _run_episode(model, env, num_steps)
         print(ep, i)
         print(env.mean_skill_gains)
+        print('-'*90+' END OF TRAINING FOR ONE STUDENT '+'-'*90)
 
 
 def _run_episode(model, env, num_steps):

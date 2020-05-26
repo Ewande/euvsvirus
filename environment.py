@@ -105,7 +105,7 @@ class StudentEnv(gym.Env):
         table.update(types)
         if self.last_action['action'] == 'test':
             table.update({
-                f'Train counters {i + 1}': self.observed_state.trainings_by_type_counter[:, i].round(3)
+                f'Train counters {i + 1}': self.train_counter[:, i].round(3)
                 for i in range(self.num_train_types)
             })
         print(f'***\n'
@@ -209,15 +209,27 @@ class StudentEnv(gym.Env):
     def _get_mean_type_gain(self, subject, difficulty, gain):
         num_trainings_since_last_test = self.observed_state.trainings_by_type_counter[subject]
         if np.sum(num_trainings_since_last_test) > 0:
-            relative_gain = gain / np.sum(num_trainings_since_last_test)
-            result = np.zeros(self.num_train_types)
-            for i, last_avg in enumerate(self.observed_state.estimated_gains):
-                if self.train_counter[subject, i] > 0:
-                    result[i] = np.average([last_avg, relative_gain], weights=[
-                        self.train_counter[subject, i], num_trainings_since_last_test[i]
-                    ])
-            self.train_counter[subject, :] += num_trainings_since_last_test
-            return result
+            #if this is a first time that test in any difficulty level is done - flag it in counter as -1
+            if np.sum(self.train_counter[subject]) == 0:
+                self.train_counter[subject] = -1
+                return self.observed_state.estimated_gains
+            else:
+                #if previous time was the first time when we test this subject - zero counter
+                if np.sum(self.train_counter[subject]) < 0:
+                    self.train_counter[subject] = 0
+                relative_gain = gain / np.sum(num_trainings_since_last_test)
+                result = np.zeros(self.num_train_types)
+
+                for i, last_avg in enumerate(self.observed_state.estimated_gains):
+
+                    if self.train_counter[subject, i] + num_trainings_since_last_test[i] != 0:
+                        weights = [self.train_counter[subject, i], num_trainings_since_last_test[i]]
+                    else:
+                        weights = [0, 1]
+                    result[i] = np.average([last_avg, relative_gain], weights=weights)
+
+                self.train_counter[subject, :] += num_trainings_since_last_test
+                return result
         else:
             return self.observed_state.estimated_gains
 
@@ -251,7 +263,10 @@ class StudentEnv(gym.Env):
         # estimated_gain = POPULATION_MEAN_SKILL_GAIN * train_type
         # adapted_learning_reward = estimated_penalty * estimated_gain * GAIN_REWARD_RATIO
         # return 0 - (learning_type + 1) + adapted_learning_reward
-        return 0
+        if np.argmax(self.observed_state.estimated_gains) == train_type and np.argmax(np.sum(self.mean_skill_gains, axis=0)) == train_type:
+            return settings.ADAPTED_TRAIN_TYPE_REWARD
+        else:
+            return 0
 
     def _get_not_adapted_train_penalty(self, skill, train_difficulty):
         proper_difficulty = self._get_proper_difficulty(skill)
@@ -260,6 +275,25 @@ class StudentEnv(gym.Env):
     def _get_proper_difficulty(self, skill):
         return sum(self.difficulty_thresholds <= skill) - 1
 
+class StudentEnvTalented(StudentEnv):
+    def _sample_mean_skills_gains(self):
+        talented_type = np.random.choice(self.num_train_types, 1)[0]
+        skill_gain_matrix = np.tile(np.random.normal(settings.POPULATION_MEAN_SKILL_GAIN,
+                                                     settings.POPULATION_STD_SKILL_GAIN,
+                                                     size=self.num_train_types - 1), (self.num_subjects, 1))
+        skill_gain_matrix += np.random.normal(0, settings.POPULATION_STD_TYPE_GAIN,
+                                              size=(self.num_subjects, self.num_train_types - 1))
+
+        talented_gain_matrix = np.tile(np.random.normal(settings.TALENTED_MEAN_SKILL_GAIN,
+                                                     settings.TALENTED_STD_SKILL_GAIN,
+                                                     size=1), (self.num_subjects, 1))
+        talented_gain_matrix += np.random.normal(0, settings.TALENTED_STD_TYPE_GAIN,
+                                              size=(self.num_subjects, 1))
+        talented_gain_matrix = np.maximum(talented_gain_matrix, settings.TALENTED_MIN_SKILL_GAIN)
+
+        final_gain_matrix = np.concatenate((skill_gain_matrix[:, :talented_type], talented_gain_matrix,
+                                            skill_gain_matrix[:, talented_type:]), axis=1)
+        return np.maximum(final_gain_matrix, settings.POPULATION_MIN_SKILL_GAIN)
 
 class StudentEnvBypass(StudentEnv):
     def __init__(self, env: StudentEnv, prob_ratio):
