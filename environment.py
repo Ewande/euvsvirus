@@ -275,25 +275,19 @@ class StudentEnv(gym.Env):
     def _get_proper_difficulty(self, skill):
         return sum(self.difficulty_thresholds <= skill) - 1
 
+
 class StudentEnvTalented(StudentEnv):
     def _sample_mean_skills_gains(self):
-        talented_type = np.random.choice(self.num_train_types, 1)[0]
-        skill_gain_matrix = np.tile(np.random.normal(settings.POPULATION_MEAN_SKILL_GAIN,
-                                                     settings.POPULATION_STD_SKILL_GAIN,
-                                                     size=self.num_train_types - 1), (self.num_subjects, 1))
-        skill_gain_matrix += np.random.normal(0, settings.POPULATION_STD_TYPE_GAIN,
-                                              size=(self.num_subjects, self.num_train_types - 1))
+        base_gains = super()._sample_mean_skills_gains()
 
-        talented_gain_matrix = np.tile(np.random.normal(settings.TALENTED_MEAN_SKILL_GAIN,
-                                                     settings.TALENTED_STD_SKILL_GAIN,
-                                                     size=1), (self.num_subjects, 1))
-        talented_gain_matrix += np.random.normal(0, settings.TALENTED_STD_TYPE_GAIN,
-                                              size=(self.num_subjects, 1))
-        talented_gain_matrix = np.maximum(talented_gain_matrix, settings.TALENTED_MIN_SKILL_GAIN)
+        talented_type = np.random.choice(self.num_train_types)
+        talented_gains = np.random.normal(settings.TALENTED_MEAN_SKILL_GAIN, settings.TALENTED_STD_SKILL_GAIN)
+        talented_gains += np.random.normal(0, settings.TALENTED_STD_TYPE_GAIN, size=self.num_subjects)
+        talented_gains = np.maximum(talented_gains, settings.TALENTED_MIN_SKILL_GAIN)
 
-        final_gain_matrix = np.concatenate((skill_gain_matrix[:, :talented_type], talented_gain_matrix,
-                                            skill_gain_matrix[:, talented_type:]), axis=1)
-        return np.maximum(final_gain_matrix, settings.POPULATION_MIN_SKILL_GAIN)
+        base_gains[:, talented_type] = talented_gains
+        return base_gains
+
 
 class StudentEnvBypass(StudentEnv):
     def __init__(self, env: StudentEnv, prob_ratio):
