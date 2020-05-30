@@ -35,18 +35,24 @@ class ObservedState:
         self.estimated_gains = np.zeros_like(self.estimated_gains)
 
     def get_space(self):
+        # ## Dimensions:
+        # - latest test scores
+        # - differences between previous and latest test scores (later called gain)
+        # - number of trainings since last test for each training type
+        # - gain attributed to each training type
+
         low_bound = np.concatenate([
-            np.zeros_like(self.last_test_scores),  # min test score
-            np.full_like(self.last_test_improvements, -100), # main difference between previous test score and current test score (later called gain)
-            np.zeros_like(self.trainings_by_type_counter), # min number of trainings since last test for each training type
-            np.full_like(self.estimated_gains, -100)],  # min gain attributed to each training type
+            np.zeros_like(self.last_test_scores),
+            np.full_like(self.last_test_improvements, -100),
+            np.zeros_like(self.trainings_by_type_counter),
+            np.full_like(self.estimated_gains, -100)],
             axis=None)
 
         high_bound = np.concatenate([
-            np.full_like(self.last_test_scores, 100),  # max test score
-            np.full_like(self.last_test_improvements, 100), # max difference between previous test score and current test score (later called gain)
-            np.full_like(self.trainings_by_type_counter, sys.maxsize), # max number of trainings since last test for each training type
-            np.full_like(self.estimated_gains, 100)],  # max gain attributed to each training type
+            np.full_like(self.last_test_scores, 100),
+            np.full_like(self.last_test_improvements, 100),
+            np.full_like(self.trainings_by_type_counter, sys.maxsize),
+            np.full_like(self.estimated_gains, 100)],
             axis=None)
         return spaces.Box(low=low_bound, high=high_bound)
 
