@@ -20,6 +20,7 @@ SUPPORTED_ENV_TYPES = {
     'StudentEnvBypass': StudentEnvBypass
 }
 
+
 @click.group()
 def cli():
     pass
@@ -32,7 +33,7 @@ def cli():
 @click.option('--num-difficulty-levels', '-d', default=3)
 @click.option('--num-learning-types', '-l', default=3)
 @click.option('--training-steps', '-t', default=250000)
-@click.option('--env_type', '-v', type=click.Choice(list(SUPPORTED_ENV_TYPES.keys()), case_sensitive=False),
+@click.option('--env-type', '-v', type=click.Choice(list(SUPPORTED_ENV_TYPES.keys()), case_sensitive=False),
               default='StudentEnv')
 def train(model_type, output_path, num_subjects, num_difficulty_levels, num_learning_types, training_steps, env_type):
     model_class = SUPPORTED_MODEL_TYPES[model_type]
@@ -55,8 +56,8 @@ def train(model_type, output_path, num_subjects, num_difficulty_levels, num_lear
 @click.argument('model-path', type=click.Path())
 @click.option('--num-episodes', '-e', default=200)
 @click.option('--num-steps', '-s', default=20000)
-@click.option('--logging-path')
-@click.option('--env_type', '-v', type=click.Choice(list(SUPPORTED_ENV_TYPES.keys()), case_sensitive=False),
+@click.option('--logging-path', '-l')
+@click.option('--env-type', '-v', type=click.Choice(list(SUPPORTED_ENV_TYPES.keys()), case_sensitive=False),
               default='StudentEnv')
 def test(model_path, num_episodes, num_steps, logging_path, env_type):
     env, metadata = _setup_run(model_path, logging_path, env_type)
@@ -68,8 +69,8 @@ def test(model_path, num_episodes, num_steps, logging_path, env_type):
 @click.option('--metadata-path', type=click.Path(exists=True))
 @click.option('--num-episodes', '-e', default=200)
 @click.option('--num-steps', '-s', default=20000)
-@click.option('--logging-path')
-@click.option('--env_type', '-v', type=click.Choice(list(SUPPORTED_ENV_TYPES.keys()), case_sensitive=False),
+@click.option('--logging-path', '-l')
+@click.option('--env-type', '-v', type=click.Choice(list(SUPPORTED_ENV_TYPES.keys()), case_sensitive=False),
               default='StudentEnv')
 def test_random(metadata_path, num_episodes, num_steps, logging_path, env_type):
     env, metadata = _setup_run(metadata_path, logging_path, env_type)
@@ -81,8 +82,8 @@ def test_random(metadata_path, num_episodes, num_steps, logging_path, env_type):
 @click.option('--metadata-path', type=click.Path())
 @click.option('--num-episodes', '-e', default=200)
 @click.option('--num-steps', '-s', default=20000)
-@click.option('--logging-path')
-@click.option('--env_type', '-v', type=click.Choice(list(SUPPORTED_ENV_TYPES.keys()), case_sensitive=False),
+@click.option('--logging-path', '-l')
+@click.option('--env-type', '-v', type=click.Choice(list(SUPPORTED_ENV_TYPES.keys()), case_sensitive=False),
               default='StudentEnv')
 def test_simple(metadata_path, num_episodes, num_steps, logging_path, env_type):
     env, metadata = _setup_run(metadata_path, logging_path, env_type)
@@ -113,7 +114,7 @@ def _run_episode(model, env, num_steps):
     for i in range(num_steps):
         action, _states = model.predict(obs)
         obs, rewards, done, info = env.step(action)
-        print(i)
+        # print(i)
         env.render()
         if done:
             return i
