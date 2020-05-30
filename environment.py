@@ -10,7 +10,7 @@ from tabulate import tabulate
 
 import reporting
 import settings
-from utils import estimate_skills
+from utils import estimate_skill
 
 
 class ObservedState:
@@ -180,8 +180,8 @@ class StudentEnv(gym.Env):
 
     def _test(self, subject, difficulty):
         test_mean = self._get_test_mean(subject, difficulty)
-        prev_test_score = self.observed_state.last_test_scores[subject, difficulty]
-        prev_test_scores = copy.copy(self.observed_state.last_test_scores)
+        prev_test_scores = copy.copy(self.observed_state.last_test_scores[subject])
+        prev_test_score = prev_test_scores[difficulty]
 
         new_test_score = min(max(np.random.normal(test_mean, settings.TEST_SCORE_STD), 0), 100)
         self.last_action['test_score'] = new_test_score
@@ -189,8 +189,8 @@ class StudentEnv(gym.Env):
         self.observed_state.last_test_scores[subject, difficulty] = new_test_score
         self.observed_state.last_test_improvements[subject, difficulty] = new_test_score - prev_test_score
 
-        estimated_gain = estimate_skills(self.observed_state.last_test_scores, settings.REVIEW_RATIO)[subject] - \
-                         estimate_skills(prev_test_scores, settings.REVIEW_RATIO)[subject]
+        estimated_gain = estimate_skill(self.observed_state.last_test_scores[subject], settings.REVIEW_RATIO) - \
+                         estimate_skill(prev_test_scores, settings.REVIEW_RATIO)
 
         self.observed_state.estimated_gains = self._get_mean_type_gain(subject, difficulty, estimated_gain)
         self.observed_state.trainings_by_type_counter[subject] = 0
