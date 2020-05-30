@@ -1,4 +1,5 @@
 import copy
+import enum
 import json
 import logging
 import sys
@@ -64,6 +65,39 @@ class ObservedState:
             self.estimated_gains
         ], axis=None)
 
+    @classmethod
+    def from_observation(cls, numpy_array, num_subjects, num_difficulty_levels,
+                         num_train_types):
+        state = cls(num_subjects, num_difficulty_levels, num_train_types)
+
+        tests_number = num_subjects * num_difficulty_levels
+        state.last_test_scores = numpy_array[:tests_number].reshape(
+            num_subjects, num_difficulty_levels
+        )
+
+        improvements_slice = slice(tests_number, 2 * tests_number)
+        state.last_test_improvements = numpy_array[improvements_slice].reshape(
+            num_subjects, num_difficulty_levels
+        )
+
+        counters_slice = slice(
+            improvements_slice.stop,
+            improvements_slice.stop + num_subjects * num_train_types
+        )
+        state.trainigs_by_type_counter = numpy_array[counters_slice].reshape(
+            num_subjects, num_train_types
+        )
+
+        state.estimated_gains = numpy_array[counters_slice.stop:].reshape(
+            num_train_types)
+
+        return state
+
+
+class ActionType(enum.Enum):
+    TRAIN = 0
+    TEST = 1
+
 
 class StudentEnv(gym.Env):
     def __init__(self, num_subjects=3, num_difficulty_levels=3, num_train_types=3):
@@ -80,7 +114,7 @@ class StudentEnv(gym.Env):
 
         # define action space & observation space
         self.action_space = spaces.MultiDiscrete([
-            2,  # train or test
+            len(ActionType),
             num_subjects,  # which subject the action refers to
             num_difficulty_levels,  # test difficulty level (not used if action=train)
             num_train_types,  # train type (not used if action=test)
@@ -142,6 +176,7 @@ class StudentEnv(gym.Env):
         assert self.action_space.contains(action)
 
         is_test, subject, test_difficulty, train_type, train_difficulty = action
+        action_type = ActionType(is_test)
         self.last_action = {
             'action': ['train', 'test'][is_test],
             'subject': subject + 1,
@@ -150,7 +185,7 @@ class StudentEnv(gym.Env):
 
         reward = settings.TIME_PENALTY
         is_done = False
-        if is_test:
+        if action_type is ActionType.TEST:
             reward += self._test(subject, test_difficulty)
             self.cum_train_time[subject] = 0
             if self._is_learning_done():

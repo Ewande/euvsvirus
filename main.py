@@ -4,6 +4,7 @@ import click
 from stable_baselines.common.policies import MlpPolicy
 from stable_baselines import TRPO, PPO2
 
+import agent
 from environment import StudentEnv, StudentEnvTalented, StudentEnvBypass
 from reporting import setup_logging
 
@@ -58,14 +59,8 @@ def train(model_type, output_path, num_subjects, num_difficulty_levels, num_lear
 @click.option('--env_type', '-v', type=click.Choice(list(SUPPORTED_ENV_TYPES.keys()), case_sensitive=False),
               default='StudentEnv')
 def test(model_path, num_episodes, num_steps, logging_path, env_type):
-    with open(model_path + '.metadata') as outfile:
-        metadata = json.load(outfile)
-
-    setup_logging(logging_path or f'{model_path}.log')
-
+    env, metadata = _setup_run(model_path, logging_path, env_type)
     model = SUPPORTED_MODEL_TYPES[metadata['model_type']].load(model_path)
-    env_class = SUPPORTED_ENV_TYPES[env_type]
-    env = env_class(num_subjects=metadata['num_subjects'])
     _run_env(model, env, num_episodes, num_steps)
 
 
@@ -77,14 +72,32 @@ def test(model_path, num_episodes, num_steps, logging_path, env_type):
 @click.option('--env_type', '-v', type=click.Choice(list(SUPPORTED_ENV_TYPES.keys()), case_sensitive=False),
               default='StudentEnv')
 def test_random(metadata_path, num_episodes, num_steps, logging_path, env_type):
-    with open(metadata_path) as outfile:
+    env, metadata = _setup_run(metadata_path, logging_path, env_type)
+    model = agent.RandomAgent(env)
+    _run_env(model, env, num_episodes, num_steps)
+
+
+@cli.command()
+@click.option('--metadata-path', type=click.Path())
+@click.option('--num-episodes', '-e', default=200)
+@click.option('--num-steps', '-s', default=20000)
+@click.option('--logging-path')
+@click.option('--env_type', '-v', type=click.Choice(list(SUPPORTED_ENV_TYPES.keys()), case_sensitive=False),
+              default='StudentEnv')
+def test_simple(metadata_path, num_episodes, num_steps, logging_path, env_type):
+    env, metadata = _setup_run(metadata_path, logging_path, env_type)
+    model = agent.SimpleAgent(env)
+    _run_env(model, env, num_episodes, num_steps)
+
+
+def _setup_run(input_path, logging_path, env_type):
+    with open(input_path + '.metadata') as outfile:
         metadata = json.load(outfile)
 
-    setup_logging(logging_path or f'random.log')
-
+    setup_logging(logging_path or f'{input_path}.log')
     env_class = SUPPORTED_ENV_TYPES[env_type]
-    env = env_class(metadata['num_subjects'], metadata['num_difficulty_levels'], metadata['num_learning_types'])
-    _run_env(None, env, num_episodes, num_steps)
+    env = env_class(num_subjects=metadata['num_subjects'])
+    return env, metadata
 
 
 def _run_env(model, env, num_episodes, num_steps):
@@ -98,10 +111,7 @@ def _run_env(model, env, num_episodes, num_steps):
 def _run_episode(model, env, num_steps):
     obs = env.reset()
     for i in range(num_steps):
-        if model is None:
-            action = env.action_space.sample()
-        else:
-            action, _states = model.predict(obs)
+        action, _states = model.predict(obs)
         obs, rewards, done, info = env.step(action)
         print(i)
         env.render()
